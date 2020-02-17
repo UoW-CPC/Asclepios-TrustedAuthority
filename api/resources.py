@@ -4,6 +4,7 @@ from tastypie.authorization import Authorization
 from tastypie.constants import ALL, ALL_WITH_RELATIONS
 from tastypie.bundle import Bundle 
 from parameters import KeyG, SALT, IV, hash_length
+from django.db.models import Q
 
 import json
 import hashlib
@@ -20,6 +21,7 @@ import logging
 
 # Get an instance of a logger
 logger = logging.getLogger(__name__)
+NO_ATTRIBUTES = 400 # allow to get maximum of NO_ATTRIBUTES items at once
 
 #===============================================================================
 # "File Number" resource
@@ -31,9 +33,24 @@ class FileNoResource(ModelResource):
         authorization = Authorization()
         fields = ['w', 'fileno']
         filtering = {
-            "w": ['exact'],
+            "w": ['exact','in'],
         }
-
+        limit=NO_ATTRIBUTES  # allow to get maximum of NO_ATTRIBUTES items at once
+    def apply_filters(self, request, applicable_filters): # customized filter, which accept to get value with OR, for i.e. w = w_1 or w = w_2
+        query = request.GET.get('w', None)
+ 
+        if query: # build filter with OR
+            args = query.split(",") # split parameters by comma
+            l = len(args)
+            qset = Q(w=args[0])
+            for i in range(1,l):
+                qset = qset | Q(w=args[i])
+            ret = self.get_object_list(request).filter(qset) # filter values which satisfy qset
+            return ret
+        else:
+            base_object_list = super(FileNoResource, self).apply_filters(request, applicable_filters)
+            return base_object_list
+      
 #===============================================================================
 # "Search Number" resource
 #===============================================================================
@@ -44,8 +61,23 @@ class SearchNoResource(ModelResource):
         authorization = Authorization()
         fields = ['w', 'searchno']
         filtering = {
-            "w": ['exact'],
+            "w": ['exact','in'],
         }
+        limit=NO_ATTRIBUTES
+    def apply_filters(self, request, applicable_filters): # customized filter, which accept to get value with OR, for i.e. w = w_1 or w = w_2
+        query = request.GET.get('w', None)
+ 
+        if query: # build filter with OR
+            args = query.split(",") # split parameters by comma
+            l = len(args)
+            qset = Q(w=args[0])
+            for i in range(1,l):
+                qset = qset | Q(w=args[i])
+            ret = self.get_object_list(request).filter(qset) # filter values which satisfy qset
+            return ret
+        else:
+            base_object_list = super(SearchNoResource, self).apply_filters(request, applicable_filters)
+            return base_object_list
 
 #===============================================================================
 # Common functions
@@ -150,18 +182,17 @@ class SearchResource(Resource):
         
         plaintext_byte =  str.encode(hashW + searchNo)
         logger.debug("new plaintext:", plaintext_byte)
-        newKeyW = SJCL().encrypt(plaintext_byte,KeyG,SALT,IV)#b"abc123!?",b"abcdefg") # Compute new KeyW ,,
+        newKeyW = SJCL().encrypt(plaintext_byte,KeyG,SALT,IV) # Compute new KeyW
         logger.debug("new ciphertext:", newKeyW)
         logger.debug("decrypted value:", SJCL().decrypt(newKeyW, KeyG))
         newKeyW_ciphertext = newKeyW['ct'] # convert type from dict (newKeyW) to byte (newKeyW_byte)
-        #newKeyW_str = str(newKeyW_byte,'utf-8') # convert type from byte (newKeyW_byte) to byte (newKeyW_str)
         logger.debug("newKeyW_ciphertext:", newKeyW_ciphertext) 
         
         fileno = bundle.obj.fileno
         Lta = []
         
         # Compute all addresses with the new key
-        for i in range(1,int(fileno)+1):
+        for i in range(1,int(fileno)+1): # file number is counted from 1
             logger.debug("i:",i)
             logger.debug("newKeyW_ciphertext:",str(newKeyW_ciphertext,'utf-8'))
             input = (str(newKeyW_ciphertext,'utf-8') + str(i) + "0").encode('utf-8')
