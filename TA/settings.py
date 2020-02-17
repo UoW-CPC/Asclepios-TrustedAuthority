@@ -160,3 +160,6 @@ logging.config.dictConfig({
         },
     },
 })
+
+# Prevent creating pyc files
+PYTHONDONTWRITEBYTECODE = 1
