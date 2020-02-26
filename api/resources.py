@@ -160,7 +160,6 @@ class SearchResource(Resource):
         KeyW = bundle.obj.KeyW
         logger.debug("Type of ciphertext:",type(KeyW))
         
-        
         # Recover hash(w) and searchNo[w] from KeyW
         logger.debug("key:",KeyG)
         logger.debug("KeyW",KeyW)
@@ -206,3 +205,93 @@ class SearchResource(Resource):
         bundle.obj.fileno = 0 # hide fileNo in the response
 
         return bundle # return the list of computed addresses to CSP, which sends the request
+
+#===============================================================================
+# "Long line request" object
+#===============================================================================  
+class LongLineReq(object):
+    requestType  = '' # requestType can be "searchno" or "fileno"
+    requestLine = ''
+    
+#===============================================================================
+# "Long line request" resource
+#===============================================================================       
+class LongLineReqResource(Resource):
+    requestType = fields.CharField(attribute = 'requestType')
+    requestLine = fields.CharField(attribute='requestLine')
+    #Lno = fields.ListField(attribute='Lno',default=[]) # List of addresses, computed by TA
+      
+    class Meta:
+        resource_name = 'longrequest'
+        object_class = LongLineReq
+        authorization = Authorization()
+        always_return_data=True # This is enabled, permitting return results for post request
+        #fields = ['Lno']
+    
+     # adapted this from ModelResource
+    def get_resource_uri(self, bundle_or_obj):
+        kwargs = {
+            'resource_name': self._meta.resource_name,
+        }
+
+        if isinstance(bundle_or_obj, Bundle):
+            kwargs['pk'] = bundle_or_obj.obj.requestType # pk is referenced in ModelResource
+        else:
+            kwargs['pk'] = bundle_or_obj.requestType
+          
+        if self._meta.api_name is not None:
+            kwargs['api_name'] = self._meta.api_name
+          
+        return self._build_reverse_url('api_dispatch_detail', kwargs = kwargs)
+ 
+    def get_object_list(self, request):
+        # inner get of object list... this is where you'll need to
+        # fetch the data from what ever data source
+        return 0
+ 
+    def obj_get_list(self, request = None, **kwargs):
+        # outer get of object list... this calls get_object_list and
+        # could be a point at which additional filtering may be applied
+        return self.get_object_list(request)
+ 
+    def obj_get(self, bundle, request = None, **kwargs):
+#         get one object from data source
+        requestType = kwargs['pk']
+            
+        bundle_obj = LongLineReq()
+        bundle_obj.requestType = requestType
+
+        try:
+            return bundle_obj
+        except KeyError:
+            raise NotFound("Object not found") 
+   
+    def obj_create(self, bundle, request = None, **kwargs):
+        logger.info("Long line request in TA Server")
+        
+        # create a new object
+        bundle.obj = LongLineReq()
+          
+        # full_hydrate does the heavy lifting mapping the
+        # POST-ed payload key/values to object attribute/values
+        bundle = self.full_hydrate(bundle)
+        
+        requestType = bundle.obj.requestType
+        requestLine = bundle.obj.requestLine
+        logger.debug("Type of request:",requestType)
+        logger.debug("Request content:",requestLine)
+        
+        if requestType=="fileno":
+            #response = FileNo.objects.filter(Q(w="patient[age]20") | Q(w="patient[age]23"))
+            logger.debug("Send internal request")
+            response = requests.get("http://127.0.0.1:8080/api/v1/fileno/?w="+requestLine)  
+            logger.debug("List of file no:",response)
+        else:   
+            #response = SearchNo.objects.get(w=requestLine)
+            response = requests.get("http://127.0.0.1:8080/api/v1/search/?w="+requestLine)  
+            logger.debug("List of search no:",response)
+        bundle.obj.requestLine = '' # hide requestLine in the response
+        bundle.obj.requestType = '' # hide requestType in the response
+        #bundle.data["result"]=response.text
+        bundle.data["result"]=response
+        return bundle

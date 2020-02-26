@@ -13,5 +13,3 @@ class SearchNo(models.Model):
     searchno = models.IntegerField()
     def __str__(self):
         return '%s %d' % (self.w, self.searchno)
-
-    
