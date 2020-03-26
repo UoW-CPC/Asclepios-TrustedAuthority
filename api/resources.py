@@ -91,14 +91,14 @@ def hash(input):
 #===============================================================================  
 class Search(object):
     KeyW = ''
-    fileno = 0
+    #fileno = 0
     
 #===============================================================================
 # "Search Query" resource
 #===============================================================================       
 class SearchResource(Resource):
     KeyW = fields.CharField(attribute = 'KeyW')
-    fileno = fields.IntegerField(attribute='fileno')
+    #fileno = fields.IntegerField(attribute='fileno')
     Lta = fields.ListField(attribute='Lta',default=[]) # List of addresses, computed by TA
     
     class Meta:
@@ -187,24 +187,29 @@ class SearchResource(Resource):
         newKeyW_ciphertext = newKeyW['ct'] # convert type from dict (newKeyW) to byte (newKeyW_byte)
         logger.debug("newKeyW_ciphertext:", newKeyW_ciphertext) 
         
-        fileno = bundle.obj.fileno
+       # fileno = bundle.obj.fileno # INCORRECT:  fileno should be retrieved locally instead of from the request
+        logger.debug("Retrieve fileno")
         Lta = []
-        
-        # Compute all addresses with the new key
-        for i in range(1,int(fileno)+1): # file number is counted from 1
-            logger.debug("i:",i)
-            logger.debug("newKeyW_ciphertext:",str(newKeyW_ciphertext,'utf-8'))
-            input = (str(newKeyW_ciphertext,'utf-8') + str(i) + "0").encode('utf-8')
-            addr = hash(input)
-            logger.debug("hash input:",input)
-            logger.debug("hash output (computed from newKeyW):", addr)
-            Lta.append(addr)
-
-        bundle.obj.Lta = Lta
-        bundle.obj.KeyW = '' # hide KeyW in the response
-        bundle.obj.fileno = 0 # hide fileNo in the response
-
-        return bundle # return the list of computed addresses to CSP, which sends the request
+        try:
+            fileno = FileNo.objects.get(w=hashW).fileno
+            logger.debug("fileno from the internal request:",fileno)
+            # Compute all addresses with the new key
+            for i in range(1,int(fileno)+1): # file number is counted from 1
+                logger.debug("i:",i)
+                logger.debug("newKeyW_ciphertext:",str(newKeyW_ciphertext,'utf-8'))
+                input = (str(newKeyW_ciphertext,'utf-8') + str(i) + "0").encode('utf-8')
+                addr = hash(input)
+                logger.debug("hash input:",input)
+                logger.debug("hash output (computed from newKeyW):", addr)
+                Lta.append(addr)
+        except: # not found
+            fileno = 0 
+            logger.debug("Not found fileno")
+        finally:
+            bundle.obj.Lta = Lta
+            bundle.obj.KeyW = '' # hide KeyW in the response
+            # bundle.obj.fileno = 0 # hide fileNo in the response
+            return bundle # return the list of computed addresses to CSP, which sends the request
 
 #===============================================================================
 # "Long line request" object
