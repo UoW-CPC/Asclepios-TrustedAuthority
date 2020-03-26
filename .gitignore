@@ -1,0 +1,12 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+
+# Distribution / Packaging
+*.egg-info/
+
+# OSX artifacts
+.DS_Store
+
+# Development database
+db.sqlite3
