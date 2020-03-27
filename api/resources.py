@@ -203,7 +203,7 @@ class SearchResource(Resource):
                 logger.debug("hash output (computed from newKeyW):", addr)
                 Lta.append(addr)
         except: # not found
-            fileno = 0 
+            # fileno = 0 
             logger.debug("Not found fileno")
         finally:
             bundle.obj.Lta = Lta
