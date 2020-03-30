@@ -177,7 +177,7 @@ class SearchResource(Resource):
         # increase search number
         searchNo = str(int(searchNo) + 1)
         
-        logger.debug("hashW: %s", hashW, "searchNo: %s", searchNo)
+        logger.debug("hashW: %s, searchNo: %s", hashW, searchNo)
         
         plaintext_byte =  str.encode(hashW + searchNo)
         logger.debug("new plaintext: %s", plaintext_byte)
@@ -195,7 +195,7 @@ class SearchResource(Resource):
             logger.debug("fileno from the internal request: %s",fileno)
             # Compute all addresses with the new key
             for i in range(1,int(fileno)+1): # file number is counted from 1
-                logger.debug("i:",i)
+                logger.debug("i: %s",i)
                 logger.debug("newKeyW_ciphertext: %s",str(newKeyW_ciphertext,'utf-8'))
                 input = (str(newKeyW_ciphertext,'utf-8') + str(i) + "0").encode('utf-8')
                 addr = hash(input)
