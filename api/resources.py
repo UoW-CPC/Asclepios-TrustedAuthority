@@ -177,13 +177,12 @@ class SearchResource(Resource):
         # increase search number
         searchNo = str(int(searchNo) + 1)
         
-        logger.debug("hashW: %s", hashW,)
-        logger.debug( "searchNo: %s", searchNo)
+        logger.debug("hashW: %s, searchNo: %s", hashW, searchNo)
         
         plaintext_byte =  str.encode(hashW + searchNo)
         logger.debug("new plaintext: %s", plaintext_byte)
         newKeyW = SJCL().encrypt(plaintext_byte,KeyG,SALT,IV) # Compute new KeyW
-        ("new ciphertext: {}", newKeyW)
+        logger.debug("new ciphertext: {}", newKeyW)
         logger.debug("decrypted value: %s", SJCL().decrypt(newKeyW, KeyG))
         newKeyW_ciphertext = newKeyW['ct'] # convert type from dict (newKeyW) to byte (newKeyW_byte)
         logger.debug("newKeyW_ciphertext: %s", newKeyW_ciphertext) 
@@ -196,7 +195,7 @@ class SearchResource(Resource):
             logger.debug("fileno from the internal request: %s",fileno)
             # Compute all addresses with the new key
             for i in range(1,int(fileno)+1): # file number is counted from 1
-                logger.debug("i:",i)
+                logger.debug("i: %s",i)
                 logger.debug("newKeyW_ciphertext: %s",str(newKeyW_ciphertext,'utf-8'))
                 input = (str(newKeyW_ciphertext,'utf-8') + str(i) + "0").encode('utf-8')
                 addr = hash(input)
@@ -204,7 +203,7 @@ class SearchResource(Resource):
                 logger.debug("hash output (computed from newKeyW): %s", addr)
                 Lta.append(addr)
         except: # not found
-            fileno = 0 
+            # fileno = 0 
             logger.debug("Not found fileno")
         finally:
             bundle.obj.Lta = Lta
@@ -284,18 +283,18 @@ class LongLineReqResource(Resource):
         
         requestType = bundle.obj.requestType
         requestLine = bundle.obj.requestLine
-        logger.debug("Type of request: %s",requestType)
-        logger.debug("Request content: %s",requestLine)
+        logger.debug("Type of request:",requestType)
+        logger.debug("Request content:",requestLine)
         
         if requestType=="fileno":
             #response = FileNo.objects.filter(Q(w="patient[age]20") | Q(w="patient[age]23"))
             logger.debug("Send internal request")
             response = requests.get("http://127.0.0.1:8080/api/v1/fileno/?w="+requestLine)  
-            logger.debug("List of file no: %s",response)
+            logger.debug("List of file no:",response)
         else:   
             #response = SearchNo.objects.get(w=requestLine)
             response = requests.get("http://127.0.0.1:8080/api/v1/search/?w="+requestLine)  
-            logger.debug("List of search no: %s",response)
+            logger.debug("List of search no:",response)
         bundle.obj.requestLine = '' # hide requestLine in the response
         bundle.obj.requestType = '' # hide requestType in the response
         #bundle.data["result"]=response.text
