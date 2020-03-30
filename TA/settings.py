@@ -24,7 +24,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SECRET_KEY = '5jpu71#_4j4jaorh+_llj45p$gno7@)+!04n!#q_27b+4cv%4('
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DJANGO_DEBUG')
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS')
 
@@ -137,7 +137,7 @@ STATIC_URL = '/static/'
 LOGGING_CONFIG = None
 
 # Get loglevel from env
-LOGLEVEL = DEBUG#os.getenv('DJANGO_LOGLEVEL', 'info').upper()
+LOGLEVEL = os.getenv('DJANGO_LOGLEVEL', 'info').upper()
 
 logging.config.dictConfig({
     'version': 1,
