@@ -26,7 +26,7 @@ SECRET_KEY = '5jpu71#_4j4jaorh+_llj45p$gno7@)+!04n!#q_27b+4cv%4('
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DJANGO_DEBUG')
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS')
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS').split(' ')
 
 
 # Application definition
@@ -81,14 +81,14 @@ WSGI_APPLICATION = 'TA.wsgi.application'
 
 DATABASES = {
     'default': {
-       'ENGINE': 'django.db.backends.sqlite3', # for local test
-       'NAME': os.path.join(BASE_DIR, 'db.sqlite3'), # for local test
-       #'ENGINE': 'django.db.backends.postgresql_psycopg2',
-       #'NAME': os.environ['DB_NAME'], # database name
-       #'USER': os.environ['DB_USER'], # user name
-       #'PASSWORD': os.environ['DB_PASSWORD'], # user password
-       #'HOST': os.environ['DB_HOST'], # postgres server
-       #'PORT': os.environ['DB_PORT'],
+       #'ENGINE': 'django.db.backends.sqlite3', # for local test
+       #'NAME': os.path.join(BASE_DIR, 'db.sqlite3'), # for local test
+       'ENGINE': 'django.db.backends.postgresql_psycopg2',
+       'NAME': os.environ['DB_NAME'], # database name
+       'USER': os.environ['DB_USER'], # user name
+       'PASSWORD': os.environ['DB_PASSWORD'], # user password
+       'HOST': os.environ['DB_HOST'], # postgres server
+       'PORT': os.environ['DB_PORT'],
     }
 }
 
