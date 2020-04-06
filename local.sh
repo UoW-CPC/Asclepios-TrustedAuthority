@@ -1,8 +1,8 @@
 #!/bin/bash
 export DJANGO_LOGLEVEL=DEBUG \
-	DJANGO_DEBUG=True
-	ALLOWED_HOSTS='*' \
-	KEY_G=123 \
-	HASH_LENGTH=256 \
-	SALT=abc123!? \
-	IV=abcdefg
+DJANGO_DEBUG=True \
+ALLOWED_HOSTS=* \
+KEY_G=123 \
+HASH_LENGTH=256 \
+SALT=abc123!? \
+IV=abcdefg
