@@ -23,8 +23,8 @@ python3 manage.py migrate
 exec gunicorn TA.wsgi:application \
     --name TA \
     --bind 0.0.0.0:8000 \
-    --workers 3 \
-    --limit-request-line 0 # configure to allow long-line requests
+    --workers 3
+    # --limit-request-line 0 # configure to allow long-line requests
     # \
     #--log-level=info \
     #--log-file=./logs/sse.log \
