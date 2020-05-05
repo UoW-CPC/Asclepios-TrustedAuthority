@@ -1,9 +1,9 @@
 from tastypie.resources import ModelResource, Resource, fields
-from api.models import FileNo,SearchNo
+from api.models import FileNo,SearchNo,Key
 from tastypie.authorization import Authorization
 from tastypie.constants import ALL, ALL_WITH_RELATIONS
 from tastypie.bundle import Bundle 
-from parameters import KeyG, SALT, IV, hash_length
+from parameters import SALT, IV, hash_length # KeyG
 from django.db.models import Q
 
 import json
@@ -159,9 +159,19 @@ class SearchResource(Resource):
         logger.debug("Type of ciphertext: %s",type(KeyW))
         
         # Recover hash(w) and searchNo[w] from KeyW
+        # Retrieve KeyG from database
+        KeyG = Key.objects.first().key;
+        #logger.debug("retrieved key:%s",key1);
         logger.debug("key: %s",KeyG)
         logger.debug("KeyW: %s",KeyW)
-        plaintext = SJCL().decrypt(KeyW, KeyG)
+        try:
+            plaintext = SJCL().decrypt(KeyW, KeyG)
+        except: # cannot decrypt
+            logger.debug("wrong token")
+            bundle.obj.Lta = ''
+            bundle.obj.KeyW = 'error' # hide KeyW in the response
+            return bundle
+            
         logger.debug("plaintext: %s",plaintext)
         
         hashChars = int(hash_length/4) # hash_length/4 = number of characters in hash value = 64
@@ -169,11 +179,16 @@ class SearchResource(Resource):
         plaintext_str = str(plaintext,'utf-8') # convert type from byte (plaintext) to string (plaintext_str)
         hashW = plaintext_str[0:hashChars]
         logger.debug("hashW: %s",hashW)
-        logger.debug("search no: %s", plaintext_str[hashChars:])
-        searchNo = plaintext_str[hashChars:]
+        #logger.debug("search no: %s", plaintext_str[hashChars:])
+        #searchNo = plaintext_str[hashChars:] # NEED to correct: it should read locally instead of parsing
+        try:
+            searchNo = SearchNo.objects.get(w=hashW).searchno # check
+        except: # if searchno does not exist
+            searchNo = 0
         
         # increase search number
-        searchNo = str(int(searchNo) + 1)
+        #searchNo = str(int(searchNo) + 1)
+        searchNo = str(searchNo + 1)
         
         logger.debug("hashW: %s, searchNo: %s", hashW, searchNo)
         
@@ -181,7 +196,7 @@ class SearchResource(Resource):
         logger.debug("new plaintext: %s", plaintext_byte)
         newKeyW = SJCL().encrypt(plaintext_byte,KeyG,SALT,IV) # Compute new KeyW
         logger.debug("new ciphertext: {}", newKeyW)
-        logger.debug("decrypted value: %s", SJCL().decrypt(newKeyW, KeyG))
+        #logger.debug("decrypted value: %s", SJCL().decrypt(newKeyW, KeyG))
         newKeyW_ciphertext = newKeyW['ct'] # convert type from dict (newKeyW) to byte (newKeyW_byte)
         logger.debug("newKeyW_ciphertext: %s", newKeyW_ciphertext) 
         
@@ -295,3 +310,18 @@ class SearchResource(Resource):
 #         #bundle.data["result"]=response.text
 #         bundle.data["result"]=response
 #         return bundle
+
+
+#===============================================================================
+# "Key" resource
+#===============================================================================
+class KeyResource(ModelResource):
+    class Meta:
+        queryset = Key.objects.all()
+        resource_name = 'key'
+        authorization = Authorization()
+        fields = ['key']
+        allowed_methods = ['get','post','delete'] # only allow GET, POST method
+        filtering = {
+            "key": ['exact'],
+        }
