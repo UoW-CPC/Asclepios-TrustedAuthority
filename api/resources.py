@@ -5,6 +5,13 @@ from tastypie.constants import ALL, ALL_WITH_RELATIONS
 from tastypie.bundle import Bundle 
 from parameters import SALT, IV, hash_length # KeyG
 from django.db.models import Q
+#from django.db import transaction # test
+#from django.shortcuts import get_object_or_404 #test
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
+from threading import Thread, Lock
+
+
 #from collections import Counter
 
 import json
@@ -23,6 +30,7 @@ import logging
 # Get an instance of a logger
 logger = logging.getLogger(__name__)
 NO_ATTRIBUTES = 400 # allow to get maximum of NO_ATTRIBUTES items at once
+update_lock = sem = threading.Semaphore()
 
 #===============================================================================
 # "File Number" resource
@@ -385,8 +393,17 @@ class UploadResource(Resource):
         except KeyError:
             raise NotFound("Object not found") 
 
-        
+    
+    #@transaction.atomic()
     def obj_create(self, bundle, request = None, **kwargs):
+        global update_lock
+        # Processing POST requests
+        cur_thread = threading.current_thread()
+        logger.debug("Thread arrived =>  {0} ".format(cur_thread.name))
+        update_lock.acquire()
+        cur_thread = threading.current_thread()
+        logger.debug("Thread entered into critical region  =>  {0}".format(cur_thread.name))
+        
         logger.info("Upload data - TA Server")
         
         # create a new object
@@ -401,16 +418,19 @@ class UploadResource(Resource):
         
         logger.debug("Query for returned fileno")
         
-        listFileNo = FileNo.objects.select_for_update().filter(w__in=listW) #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
+       # with transaction.atomic():
+             #listFileNo = get_object_or_404(FileNo.objects.select_for_update().filter(w__in=listW)) #test
+        #listFileNo = FileNo.objects.select_for_update().filter(w__in=listW) #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
+        listFileNo = FileNo.objects.filter(w__in=listW) #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
         bundle.obj.Lfileno = listFileNo.values("w","fileno")
- 
+                 
         #logger.debug("List of fileno: ()",listFileNo)
         logger.debug(bundle.obj.Lfileno)
-
+                
         count = 0
         for x in listFileNo:
             x.fileno = x.fileno+1
-        
+                        
         Ly = []
         for x in listW:
             y = listFileNo.filter(w=x).first() 
@@ -419,8 +439,8 @@ class UploadResource(Resource):
                 Ly.append(y)
             else: # if found
                 y.fileno = y.fileno+1
-            
-            
+                            
+                            
         logger.debug("List of words and file no")
         logger.debug(Ly)
         logger.debug("update file no:")
@@ -428,11 +448,15 @@ class UploadResource(Resource):
         logger.debug("create file no:")
         if Ly!=[]:
             FileNo.objects.bulk_create(Ly)
-        
+            
         logger.debug("Query for searchno")
         listSearchNo = SearchNo.objects.filter(w__in=listW).values('w','searchno') #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
        # logger.debug("List of searchno: {}",listSearchNo)
         
         bundle.obj.Lsearchno = listSearchNo.values('w','searchno')
         bundle.obj.Lw = ''
+        
+        cur_thread = threading.current_thread()
+        logger.debug("Thread left critical region =>  {0} ".format(cur_thread.name))
+        update_lock.release()
         return bundle # return the list of computed addresses to CSP, which sends the request
