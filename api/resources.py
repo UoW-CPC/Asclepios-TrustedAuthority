@@ -11,6 +11,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from threading import Thread, Lock
 
+from django.db.models import F
+
 
 #from collections import Counter
 
@@ -19,6 +21,7 @@ import hashlib
 import requests
 
 import sys
+#from Cython.Utility.CConvert import length
 sys.path.append('sjcl-0.2.1/sjcl') #we modified python sjcl a bit to allow define iv, salt of encryption
 from sjcl import SJCL
 import logging
@@ -40,9 +43,9 @@ class FileNoResource(ModelResource):
         queryset = FileNo.objects.all()
         resource_name = 'fileno'
         authorization = Authorization()
-        fields = ['w', 'fileno']
+        fields = ['w', 'fileno', 'transaction_id']
         filtering = {
-            "w": ['exact','in'],
+            "w": ['exact','in', 'transaction_id'],
         }
         limit=NO_ATTRIBUTES  # allow to get maximum of NO_ATTRIBUTES items at once
     def apply_filters(self, request, applicable_filters): # customized filter, which accept to get value with OR, for i.e. w = w_1 or w = w_2
@@ -68,9 +71,9 @@ class SearchNoResource(ModelResource):
         queryset = SearchNo.objects.all()
         resource_name = 'searchno'
         authorization = Authorization()
-        fields = ['w', 'searchno']
+        fields = ['w', 'searchno', 'transaction_id']
         filtering = {
-            "w": ['exact','in'],
+            "w": ['exact','in', 'transaction_id'],
         }
         limit=NO_ATTRIBUTES
     def apply_filters(self, request, applicable_filters): # customized filter, which accept to get value with OR, for i.e. w = w_1 or w = w_2
@@ -100,6 +103,7 @@ def hash(input):
 #===============================================================================  
 class Search(object):
     KeyW = ''
+    op = '' # operation 
     
 #===============================================================================
 # "Search Query" resource
@@ -107,6 +111,7 @@ class Search(object):
 class SearchResource(Resource):
     KeyW = fields.CharField(attribute = 'KeyW')
     Lta = fields.ListField(attribute='Lta',default=[]) # List of addresses, computed by TA
+    op = fields.CharField(attribute='op',default='')
     
     class Meta:
         resource_name = 'search'
@@ -155,6 +160,12 @@ class SearchResource(Resource):
 
     
     def obj_create(self, bundle, request = None, **kwargs):
+        cur_thread = threading.current_thread()
+        logger.debug("Thread arrived =>  {0} ".format(cur_thread.name))
+        update_lock.acquire()
+        cur_thread = threading.current_thread()
+        logger.debug("Thread entered into critical region  =>  {0}".format(cur_thread.name))
+        
         logger.info("Search in TA Server")
         
         # create a new object
@@ -169,7 +180,7 @@ class SearchResource(Resource):
         
         # Recover hash(w) and searchNo[w] from KeyW
         # Retrieve KeyG from database
-        KeyG = Key.objects.first().key;
+        KeyG = Key.objects.first().key; # assuming there is only 1 key at TA
         #logger.debug("retrieved key:%s",key1);
         logger.debug("key: %s",KeyG)
         logger.debug("KeyW: %s",KeyW)
@@ -190,6 +201,64 @@ class SearchResource(Resource):
         logger.debug("hashW: %s",hashW)
         #logger.debug("search no: %s", plaintext_str[hashChars:])
         #searchNo = plaintext_str[hashChars:] # NEED to correct: it should read locally instead of parsing
+        
+        # new
+ 
+        op = bundle.obj.op
+        if(op!=""):
+#             cur_thread = threading.current_thread()
+#             logger.debug("Thread arrived =>  {0} ".format(cur_thread.name))
+#             update_lock.acquire()
+#             cur_thread = threading.current_thread()
+#             logger.debug("Thread entered into critical region  =>  {0}".format(cur_thread.name))
+
+            if(op == "search"):
+                res = SearchNo.objects.filter(w=hashW).update(searchno=F('searchno') + 1)
+                if(res==0):  # not found SearchNo
+                    SearchNo.objects.filter(w=hashW).update(searchno=1)
+            elif(op == "delete"):
+                try:
+                    logger.debug("decrease fileno")
+                    fileno = FileNo.objects.get(w=hashW).fileno
+                    logger.debug("before decrease, current fileno:{0}".format(fileno))
+                    if(fileno == 1):
+                        logger.debug("delete fileno and searchno")
+                        FileNo.objects.get(w=hashW).delete()
+                        SearchNo.objects.get(w=hashW).delete()
+                    else:
+                        logger.debug("fileno=fileno-1")
+                        trans_id = FileNo.objects.get(w=hashW).transaction_id
+                        logger.debug("Delete transaction id: {0}".format(trans_id))
+                        FileNo.objects.filter(w=hashW).update(fileno=fileno - 1)
+                        FileNo.objects.filter(w=hashW).update(transaction_id='')
+                        SearchNo.objects.filter(w=hashW).update(transaction_id='')
+                except:
+                    pass        
+            elif(op == "add"):  # add
+                logger.debug("increase fileno")
+                res = FileNo.objects.filter(w=hashW).update(fileno=F('fileno')+1)
+                if(res==0):# not found
+                    logger.debug("not found fileno")
+                    FileNo.objects.create(w=hashW, fileno=1)
+                else:
+                    trans_id = FileNo.objects.get(w=hashW).transaction_id
+                    logger.debug("Delete transaction id: {0}".format(trans_id))
+                    FileNo.objects.filter(w=hashW).update(transaction_id='')
+                    SearchNo.objects.filter(w=hashW).update(transaction_id='')
+            bundle.obj.Lta = ''
+            bundle.obj.KeyW = '' # hide KeyW in the response
+            logger.debug("exit after update")
+            
+#             logger.debug("delete transaction id: %s",FileNo.objects.filter(w=hashW).transaction_id)
+#             FileNo.objects.filter(w=hashW).update(transaction_id='')
+#             SearchNo.objects.filter(w=hashW).update(transaction_id='')
+            
+            cur_thread = threading.current_thread()
+            logger.debug("Thread left critical region =>  {0} ".format(cur_thread.name))
+            update_lock.release()
+            return bundle # return the list of computed addresses to CSP, which sends the request
+        # end new
+         
         try:
             searchNo = SearchNo.objects.get(w=hashW).searchno # check
         except: # if searchno does not exist
@@ -227,9 +296,68 @@ class SearchResource(Resource):
             logger.debug("Not found fileno")
         finally:
             bundle.obj.Lta = Lta
-            bundle.obj.KeyW = '' # hide KeyW in the response
+            bundle.obj.KeyW = '' # hide KeyW in the response       
+            cur_thread = threading.current_thread()
+            logger.debug("Thread left critical region =>  {0} ".format(cur_thread.name))
+            update_lock.release()
             return bundle # return the list of computed addresses to CSP, which sends the request
-
+        
+#     # this is used by SSE server to acknowledge TA. Then TA updates the noFiles, noSearch
+#     def obj_update(self, bundle, request = None, **kwargs):
+#         logger.info("Acknowledge TA Server to update fileno and/or searchno")
+#           
+#         # create a new object
+#         bundle.obj = Search()
+#            
+#         # full_hydrate does the heavy lifting mapping the
+#         # POST-ed payload key/values to object attribute/values
+#         bundle = self.full_hydrate(bundle)
+#          
+#         KeyW = bundle.obj.KeyW # operation
+#         KeyG = Key.objects.first().key; # assuming there is only 1 key at TA
+#         try:
+#             plaintext = SJCL().decrypt(KeyW, KeyG)
+#             hashChars = int(hash_length/4) # hash_length/4 = number of characters in hash value = 64 
+#             plaintext_str = str(plaintext,'utf-8') # convert type from byte (plaintext) to string (plaintext_str)
+#             hashW = plaintext_str[0:hashChars]
+#             
+#             op = bundle.obj.op
+#             if(op=="search"):
+#                 try:
+#                    # searchno = SearchNo.objects.get(w=hashW).searchno
+#                    # searchno = searchno + 1
+#                     SearchNo.objects.get(w=hashW).update(searchno=F('searchno')+1)
+#                    # SearchNo.objects.put(w=hashW,searchno)
+#                 except: # not found
+#                     #searchno = 1
+#                     #SearchNo.objects.post(w=hashW,searchno)
+#                     SearchNo.objects.get(w=hashW).update(searchno=1)
+#             elif(op=="delete"):
+#                 try:
+#                     fileno = FileNo.objects.get(w=hashW).fileno
+#                     if(fileno==1):
+#                         FileNo.objects.get(w=hashW).delete()
+#                     else:
+#                         #FileNo.objects.put(w=hashW,fileno-1)
+#                         FileNo.objects.get(w=hashW).update(fileno=fileno-1)
+#                 except:
+#                     pass        
+#             elif(op=="add"): # add
+#                 try:
+#                     #fileno = FileNo.objects.get(w=hashW).fileno
+#                     FileNo.objects.get(w=hashW).update(fileno=F('fileno')+1)
+#                 except: # not found
+#                     FileNo.objects.create(w=hashW,fileno=1)
+#         except: # cannot decrypt
+#             logger.debug("wrong token")
+#             bundle.obj.KeyW = 'error' # hide KeyW in the response
+#             return bundle
+#         finally:
+#             bundle.obj.Lta = []
+#             bundle.obj.KeyW = 'update successful' # hide KeyW in the response
+#             return bundle 
+         
+        
 # #===============================================================================
 # # "Long line request" object
 # #===============================================================================  
@@ -342,7 +470,7 @@ class Upload(object):
     Lw = ''
     
 #===============================================================================
-# "Search Query" resource
+# "Upload Query" resource
 #===============================================================================       
 class UploadResource(Resource):
     Lw = fields.CharField(attribute = 'Lw')
@@ -456,6 +584,137 @@ class UploadResource(Resource):
         bundle.obj.Lsearchno = listSearchNo.values('w','searchno')
         bundle.obj.Lw = ''
         
+        cur_thread = threading.current_thread()
+        logger.debug("Thread left critical region =>  {0} ".format(cur_thread.name))
+        update_lock.release()
+        return bundle # return the list of computed addresses to CSP, which sends the request
+
+
+class Update(object):
+    Lw = ''
+    transactionId=''
+    
+    
+#===============================================================================
+# "Update Query" resource
+#===============================================================================       
+class UpdateResource(Resource):
+    Lw = fields.CharField(attribute = 'Lw')
+    Lfileno = fields.ListField(attribute='Lfileno',default=[]) # List of fileno
+    Lsearchno = fields.ListField(attribute='Lsearchno',default=[]) # List of searchno
+    transactionId = fields.CharField(attribute = 'transactionId') # transaction Id
+    
+    class Meta:
+        resource_name = 'update'
+        object_class = Update
+        authorization = Authorization()
+        always_return_data=True # This is enabled, permitting return results for post request
+        fields = ['Lw']
+    # adapted this from ModelResource
+    def get_resource_uri(self, bundle_or_obj):
+        kwargs = {
+            'resource_name': self._meta.resource_name,
+        }
+
+        if isinstance(bundle_or_obj, Bundle):
+            kwargs['pk'] = bundle_or_obj.obj.Lw # pk is referenced in ModelResource
+        else:
+            kwargs['pk'] = bundle_or_obj.Lw
+          
+        if self._meta.api_name is not None:
+            kwargs['api_name'] = self._meta.api_name
+          
+        return self._build_reverse_url('api_dispatch_detail', kwargs = kwargs)
+ 
+    def get_object_list(self, request):
+        # inner get of object list... this is where you'll need to
+        # fetch the data from what ever data source
+        return 0
+ 
+    def obj_get_list(self, request = None, **kwargs):
+        # outer get of object list... this calls get_object_list and
+        # could be a point at which additional filtering may be applied
+        return self.get_object_list(request)
+ 
+    def obj_get(self, bundle, request = None, **kwargs):
+#         get one object from data source
+        Lw = kwargs['pk']
+            
+        bundle_obj = Upload()
+        bundle_obj.Lw = Lw
+
+        try:
+            return bundle_obj
+        except KeyError:
+            raise NotFound("Object not found") 
+
+    
+    #@transaction.atomic()
+    def obj_create(self, bundle, request = None, **kwargs):
+        global update_lock
+        # Processing POST requests
+        cur_thread = threading.current_thread()
+        logger.debug("Thread arrived =>  {0} ".format(cur_thread.name))
+        update_lock.acquire()
+        cur_thread = threading.current_thread()
+        logger.debug("Thread entered into critical region  =>  {0}".format(cur_thread.name))
+        
+        logger.info("Retrieve No.Files and No.Search for update data - TA Server")
+        
+        # create a new object
+        bundle.obj = Update()
+          
+        # full_hydrate does the heavy lifting mapping the
+        # POST-ed payload key/values to object attribute/values
+        bundle = self.full_hydrate(bundle)
+        
+        listW = bundle.obj.Lw
+        trans_id = bundle.obj.transactionId
+        logger.debug("transaction id: %s",trans_id)
+        
+        logger.debug("Type of listW: %s",type(listW))
+        
+        logger.debug("Query for returned fileno")
+        
+        listFileNo = FileNo.objects.filter(w__in=listW) #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
+        listTransFile = listFileNo.values("transaction_id")
+        #bundle.obj.Lfileno = listFileNo.values("w","fileno")
+                 
+        #logger.debug("List of fileno: ()",listFileNo)
+        #logger.debug(bundle.obj.Lfileno)
+        logger.debug("transaction ids in FileNo: {0}".format(listTransFile))
+            
+        logger.debug("Query for searchno")
+        listSearchNo = SearchNo.objects.filter(w__in=listW).values('w','searchno') #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
+        listTransSearch = listSearchNo.values("transaction_id")
+        #bundle.obj.Lsearchno = listSearchNo.values('w','searchno')
+        #logger.debug(bundle.obj.Lsearchno)
+        logger.debug("transaction ids in SearchNo: {0}".format(listTransSearch))
+        bundle.obj.Lw = ''
+        
+        logger.debug("length of listTransFile %d",listTransFile.count())
+        logger.debug("count of '' in listTransFile %d",listTransFile.filter(transaction_id='').count())
+        # if there is no thread which is processing the keywords
+        if(listTransFile.filter(transaction_id='').count()==listTransFile.count() and listTransSearch.filter(transaction_id='').count()==listTransSearch.count()):
+            logger.debug("there is currently no transactions on the keywords")
+            logger.debug("add the current transaction to the keywords")
+            FileNo.objects.filter(w__in=listW).update(transaction_id=trans_id)
+            SearchNo.objects.filter(w__in=listW).update(transaction_id=trans_id)
+            bundle.obj.Lfileno = listFileNo.values("w","fileno")
+            logger.debug(bundle.obj.Lfileno)
+            bundle.obj.Lsearchno = listSearchNo.values('w','searchno')
+            logger.debug(bundle.obj.Lsearchno)
+        elif(trans_id=="delete_trans"):
+            logger.debug("Delete transaction id")
+            FileNo.objects.filter(w__in=listW).update(transaction_id="")
+            SearchNo.objects.filter(w__in=listW).update(transaction_id="")
+        else:
+            logger.debug("Current thread: %s",trans_id)
+            logger.debug("FileNo or SearchNo is being processed by another thread")
+            bundle.obj.Lfileno=[-1]# -1 item indicates it is being processed by another thread
+            bundle.obj.Lsearchno = []
+            
+            
         cur_thread = threading.current_thread()
         logger.debug("Thread left critical region =>  {0} ".format(cur_thread.name))
         update_lock.release()
