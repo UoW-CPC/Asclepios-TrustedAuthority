@@ -5,6 +5,14 @@ from tastypie.constants import ALL, ALL_WITH_RELATIONS
 from tastypie.bundle import Bundle 
 from parameters import SALT, IV, hash_length # KeyG
 from django.db.models import Q
+#from django.db import transaction # test
+#from django.shortcuts import get_object_or_404 #test
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
+from threading import Thread, Lock
+
+
+#from collections import Counter
 
 import json
 import hashlib
@@ -22,6 +30,7 @@ import logging
 # Get an instance of a logger
 logger = logging.getLogger(__name__)
 NO_ATTRIBUTES = 400 # allow to get maximum of NO_ATTRIBUTES items at once
+update_lock = sem = threading.Semaphore()
 
 #===============================================================================
 # "File Number" resource
@@ -325,3 +334,129 @@ class KeyResource(ModelResource):
         filtering = {
             "key": ['exact'],
         }
+        
+#===============================================================================
+# "Upload" object
+#===============================================================================  
+class Upload(object):
+    Lw = ''
+    
+#===============================================================================
+# "Search Query" resource
+#===============================================================================       
+class UploadResource(Resource):
+    Lw = fields.CharField(attribute = 'Lw')
+    Lfileno = fields.ListField(attribute='Lfileno',default=[]) # List of fileno
+    Lsearchno = fields.ListField(attribute='Lsearchno',default=[]) # List of searchno
+    
+    class Meta:
+        resource_name = 'upload'
+        object_class = Upload
+        authorization = Authorization()
+        always_return_data=True # This is enabled, permitting return results for post request
+        fields = ['Lw']
+    # adapted this from ModelResource
+    def get_resource_uri(self, bundle_or_obj):
+        kwargs = {
+            'resource_name': self._meta.resource_name,
+        }
+
+        if isinstance(bundle_or_obj, Bundle):
+            kwargs['pk'] = bundle_or_obj.obj.Lw # pk is referenced in ModelResource
+        else:
+            kwargs['pk'] = bundle_or_obj.Lw
+          
+        if self._meta.api_name is not None:
+            kwargs['api_name'] = self._meta.api_name
+          
+        return self._build_reverse_url('api_dispatch_detail', kwargs = kwargs)
+ 
+    def get_object_list(self, request):
+        # inner get of object list... this is where you'll need to
+        # fetch the data from what ever data source
+        return 0
+ 
+    def obj_get_list(self, request = None, **kwargs):
+        # outer get of object list... this calls get_object_list and
+        # could be a point at which additional filtering may be applied
+        return self.get_object_list(request)
+ 
+    def obj_get(self, bundle, request = None, **kwargs):
+#         get one object from data source
+        Lw = kwargs['pk']
+            
+        bundle_obj = Upload()
+        bundle_obj.Lw = Lw
+
+        try:
+            return bundle_obj
+        except KeyError:
+            raise NotFound("Object not found") 
+
+    
+    #@transaction.atomic()
+    def obj_create(self, bundle, request = None, **kwargs):
+        global update_lock
+        # Processing POST requests
+        cur_thread = threading.current_thread()
+        logger.debug("Thread arrived =>  {0} ".format(cur_thread.name))
+        update_lock.acquire()
+        cur_thread = threading.current_thread()
+        logger.debug("Thread entered into critical region  =>  {0}".format(cur_thread.name))
+        
+        logger.info("Upload data - TA Server")
+        
+        # create a new object
+        bundle.obj = Upload()
+          
+        # full_hydrate does the heavy lifting mapping the
+        # POST-ed payload key/values to object attribute/values
+        bundle = self.full_hydrate(bundle)
+        
+        listW = bundle.obj.Lw
+        logger.debug("Type of listW: %s",type(listW))
+        
+        logger.debug("Query for returned fileno")
+        
+       # with transaction.atomic():
+             #listFileNo = get_object_or_404(FileNo.objects.select_for_update().filter(w__in=listW)) #test
+        #listFileNo = FileNo.objects.select_for_update().filter(w__in=listW) #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
+        listFileNo = FileNo.objects.filter(w__in=listW) #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
+        bundle.obj.Lfileno = listFileNo.values("w","fileno")
+                 
+        #logger.debug("List of fileno: ()",listFileNo)
+        logger.debug(bundle.obj.Lfileno)
+                
+        count = 0
+        for x in listFileNo:
+            x.fileno = x.fileno+1
+                        
+        Ly = []
+        for x in listW:
+            y = listFileNo.filter(w=x).first() 
+            if y==None: # if not found
+                y = FileNo(w=x,fileno=1)
+                Ly.append(y)
+            else: # if found
+                y.fileno = y.fileno+1
+                            
+                            
+        logger.debug("List of words and file no")
+        logger.debug(Ly)
+        logger.debug("update file no:")
+        FileNo.objects.bulk_update(listFileNo,['fileno'])
+        logger.debug("create file no:")
+        if Ly!=[]:
+            FileNo.objects.bulk_create(Ly)
+            
+        logger.debug("Query for searchno")
+        listSearchNo = SearchNo.objects.filter(w__in=listW).values('w','searchno') #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
+       # logger.debug("List of searchno: {}",listSearchNo)
+        
+        bundle.obj.Lsearchno = listSearchNo.values('w','searchno')
+        bundle.obj.Lw = ''
+        
+        cur_thread = threading.current_thread()
+        logger.debug("Thread left critical region =>  {0} ".format(cur_thread.name))
+        update_lock.release()
+        return bundle # return the list of computed addresses to CSP, which sends the request

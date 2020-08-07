@@ -16,6 +16,7 @@ RUN apt-get update && \
     apt-get install -y python3-dev default-libmysqlclient-dev libssl-dev gcc && \
     rm -rf /var/lib/apt
     
+    
 # create root directory for our project in the container
 RUN mkdir /TA
 
