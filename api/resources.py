@@ -11,6 +11,9 @@ import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from threading import Thread, Lock
 
+#from django.core import serializers
+#from django.http import HttpResponse
+
 
 #from collections import Counter
 
@@ -73,6 +76,7 @@ class SearchNoResource(ModelResource):
             "w": ['exact','in'],
         }
         limit=NO_ATTRIBUTES
+        
     def apply_filters(self, request, applicable_filters): # customized filter, which accept to get value with OR, for i.e. w = w_1 or w = w_2
         query = request.GET.get('w', None)
  
@@ -229,6 +233,91 @@ class SearchResource(Resource):
             bundle.obj.Lta = Lta
             bundle.obj.KeyW = '' # hide KeyW in the response
             return bundle # return the list of computed addresses to CSP, which sends the request
+
+#===============================================================================
+# "Long line request" object
+#===============================================================================  
+class LongLineReq(object):
+    requestType  = '' # requestType can be "searchno" or "fileno"
+    Lw = []
+     
+#===============================================================================
+# "Long line request" resource
+#===============================================================================       
+class LongLineReqResource(Resource):
+    requestType = fields.CharField(attribute = 'requestType')
+    Lw = fields.ListField(attribute='Lw',default=[])      
+    class Meta:
+        resource_name = 'longrequest'
+        object_class = LongLineReq
+        authorization = Authorization()
+        always_return_data=True # This is enabled, permitting return results for post request
+        fields = ['requestType','Lw']
+     
+     # adapted this from ModelResource
+    def get_resource_uri(self, bundle_or_obj):
+        kwargs = {
+            'resource_name': self._meta.resource_name,
+        }
+ 
+        if isinstance(bundle_or_obj, Bundle):
+            kwargs['pk'] = bundle_or_obj.obj.requestType # pk is referenced in ModelResource
+        else:
+            kwargs['pk'] = bundle_or_obj.requestType
+           
+        if self._meta.api_name is not None:
+            kwargs['api_name'] = self._meta.api_name
+           
+        return self._build_reverse_url('api_dispatch_detail', kwargs = kwargs)
+  
+    def get_object_list(self, request):
+        # inner get of object list... this is where you'll need to
+        # fetch the data from what ever data source
+        return 0
+  
+    def obj_get_list(self, request = None, **kwargs):
+        # outer get of object list... this calls get_object_list and
+        # could be a point at which additional filtering may be applied
+        return self.get_object_list(request)
+  
+    def obj_get(self, bundle, request = None, **kwargs):
+#         get one object from data source
+        requestType = kwargs['pk']
+             
+        bundle_obj = LongLineReq()
+        bundle_obj.requestType = requestType
+ 
+        try:
+            return bundle_obj
+        except KeyError:
+            raise NotFound("Object not found") 
+    
+    def obj_create(self, bundle, request = None, **kwargs):
+        logger.info("Long line request in TA Server")
+         
+        # create a new object
+        bundle.obj = LongLineReq()
+           
+        # full_hydrate does the heavy lifting mapping the
+        # POST-ed payload key/values to object attribute/values
+        bundle = self.full_hydrate(bundle)
+         
+        requestType = bundle.obj.requestType
+        Lw = bundle.obj.Lw
+        logger.debug("Type of request:",requestType)
+        logger.debug("Request content:",Lw)
+         
+        if requestType=="fileno":
+            ret = FileNo.objects.filter(w__in=Lw).values("fileno","id","w")
+            logger.debug(ret)
+        else:   
+            ret = SearchNo.objects.filter(w__in=Lw).values("searchno","id","w")
+            logger.debug(ret)
+            
+        #bundle.obj.requestType = '' # hide requestLine in the response
+        bundle.obj.Lw = []#ret.values("w") # hide requestType in the response
+        bundle.data["objects"]=list(ret)
+        return bundle
 
 # #===============================================================================
 # # "Long line request" object
