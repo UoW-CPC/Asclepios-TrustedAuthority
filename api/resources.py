@@ -43,7 +43,7 @@ class FileNoResource(ModelResource):
         queryset = FileNo.objects.all()
         resource_name = 'fileno'
         authorization = Authorization()
-        fields = ['w', 'fileno']
+        fields = ['w', 'fileno','keyId']
         filtering = {
             "w": ['exact','in'],
         }
@@ -71,7 +71,7 @@ class SearchNoResource(ModelResource):
         queryset = SearchNo.objects.all()
         resource_name = 'searchno'
         authorization = Authorization()
-        fields = ['w', 'searchno']
+        fields = ['w', 'searchno','keyId']
         filtering = {
             "w": ['exact','in'],
         }
@@ -104,6 +104,7 @@ def hash(input):
 #===============================================================================  
 class Search(object):
     KeyW = ''
+    keyId = ''
     
 #===============================================================================
 # "Search Query" resource
@@ -111,6 +112,7 @@ class Search(object):
 class SearchResource(Resource):
     KeyW = fields.CharField(attribute = 'KeyW')
     Lta = fields.ListField(attribute='Lta',default=[]) # List of addresses, computed by TA
+    keyId = fields.CharField(attribute = 'keyId')
     
     class Meta:
         resource_name = 'search'
@@ -170,13 +172,19 @@ class SearchResource(Resource):
         
         KeyW = bundle.obj.KeyW
         logger.debug("Type of ciphertext: %s",type(KeyW))
-        
+        logger.debug("keyW:%s",KeyW)
+        logger.debug("bundle object:{}",bundle)
         # Recover hash(w) and searchNo[w] from KeyW
         # Retrieve KeyG from database
-        KeyG = Key.objects.first().key;
-        #logger.debug("retrieved key:%s",key1);
+        keyid = bundle.obj.keyId;
+        logger.debug("Id of key:%s",bundle.obj.keyId);
+
+        KeyG=Key.objects.get(keyId=keyid).key;
+        
         logger.debug("key: %s",KeyG)
         logger.debug("KeyW: %s",KeyW)
+        
+        
         try:
             plaintext = SJCL().decrypt(KeyW, KeyG)
         except: # cannot decrypt
@@ -192,15 +200,12 @@ class SearchResource(Resource):
         plaintext_str = str(plaintext,'utf-8') # convert type from byte (plaintext) to string (plaintext_str)
         hashW = plaintext_str[0:hashChars]
         logger.debug("hashW: %s",hashW)
-        #logger.debug("search no: %s", plaintext_str[hashChars:])
-        #searchNo = plaintext_str[hashChars:] # NEED to correct: it should read locally instead of parsing
         try:
-            searchNo = SearchNo.objects.get(w=hashW).searchno # check
+            searchNo = SearchNo.objects.get(w=hashW,keyId=keyid).searchno # check
         except: # if searchno does not exist
             searchNo = 0
         
         # increase search number
-        #searchNo = str(int(searchNo) + 1)
         searchNo = str(searchNo + 1)
         
         logger.debug("hashW: %s, searchNo: %s", hashW, searchNo)
@@ -209,14 +214,14 @@ class SearchResource(Resource):
         logger.debug("new plaintext: %s", plaintext_byte)
         newKeyW = SJCL().encrypt(plaintext_byte,KeyG,SALT,IV) # Compute new KeyW
         logger.debug("new ciphertext: {}", newKeyW)
-        #logger.debug("decrypted value: %s", SJCL().decrypt(newKeyW, KeyG))
+        
         newKeyW_ciphertext = newKeyW['ct'] # convert type from dict (newKeyW) to byte (newKeyW_byte)
         logger.debug("newKeyW_ciphertext: %s", newKeyW_ciphertext) 
         
         logger.debug("Retrieve fileno")
         Lta = []
         try:
-            fileno = FileNo.objects.get(w=hashW).fileno
+            fileno = FileNo.objects.get(w=hashW,keyId=keyid).fileno
             logger.debug("fileno from the internal request: %s",fileno)
             # Compute all addresses with the new key
             for i in range(1,int(fileno)+1): # file number is counted from 1
@@ -232,6 +237,7 @@ class SearchResource(Resource):
         finally:
             bundle.obj.Lta = Lta
             bundle.obj.KeyW = '' # hide KeyW in the response
+            bundle.obj.keyId = ''
             return bundle # return the list of computed addresses to CSP, which sends the request
 
 #===============================================================================
@@ -240,13 +246,16 @@ class SearchResource(Resource):
 class LongLineReq(object):
     requestType  = '' # requestType can be "searchno" or "fileno"
     Lw = []
+    keyId = ''
      
 #===============================================================================
 # "Long line request" resource
 #===============================================================================       
 class LongLineReqResource(Resource):
     requestType = fields.CharField(attribute = 'requestType')
-    Lw = fields.ListField(attribute='Lw',default=[])      
+    Lw = fields.ListField(attribute='Lw',default=[])  
+    keyId = fields.CharField(attribute = 'keyId')   
+     
     class Meta:
         resource_name = 'longrequest'
         object_class = LongLineReq
@@ -306,109 +315,19 @@ class LongLineReqResource(Resource):
         Lw = bundle.obj.Lw
         logger.debug("Type of request:",requestType)
         logger.debug("Request content:",Lw)
+        
+        keyid = bundle.obj.keyId
          
         if requestType=="fileno":
-            ret = FileNo.objects.filter(w__in=Lw).values("fileno","id","w")
+            ret = FileNo.objects.filter(w__in=Lw,keyId=keyid).values("fileno","id","w")
             logger.debug(ret)
         else:   
-            ret = SearchNo.objects.filter(w__in=Lw).values("searchno","id","w")
+            ret = SearchNo.objects.filter(w__in=Lw,keyId=keyid).values("searchno","id","w")
             logger.debug(ret)
             
-        #bundle.obj.requestType = '' # hide requestLine in the response
         bundle.obj.Lw = []#ret.values("w") # hide requestType in the response
         bundle.data["objects"]=list(ret)
         return bundle
-
-# #===============================================================================
-# # "Long line request" object
-# #===============================================================================  
-# class LongLineReq(object):
-#     requestType  = '' # requestType can be "searchno" or "fileno"
-#     requestLine = ''
-#     
-# #===============================================================================
-# # "Long line request" resource
-# #===============================================================================       
-# class LongLineReqResource(Resource):
-#     requestType = fields.CharField(attribute = 'requestType')
-#     requestLine = fields.CharField(attribute='requestLine')
-#     #Lno = fields.ListField(attribute='Lno',default=[]) # List of addresses, computed by TA
-#       
-#     class Meta:
-#         resource_name = 'longrequest'
-#         object_class = LongLineReq
-#         authorization = Authorization()
-#         always_return_data=True # This is enabled, permitting return results for post request
-#         #fields = ['Lno']
-#     
-#      # adapted this from ModelResource
-#     def get_resource_uri(self, bundle_or_obj):
-#         kwargs = {
-#             'resource_name': self._meta.resource_name,
-#         }
-# 
-#         if isinstance(bundle_or_obj, Bundle):
-#             kwargs['pk'] = bundle_or_obj.obj.requestType # pk is referenced in ModelResource
-#         else:
-#             kwargs['pk'] = bundle_or_obj.requestType
-#           
-#         if self._meta.api_name is not None:
-#             kwargs['api_name'] = self._meta.api_name
-#           
-#         return self._build_reverse_url('api_dispatch_detail', kwargs = kwargs)
-#  
-#     def get_object_list(self, request):
-#         # inner get of object list... this is where you'll need to
-#         # fetch the data from what ever data source
-#         return 0
-#  
-#     def obj_get_list(self, request = None, **kwargs):
-#         # outer get of object list... this calls get_object_list and
-#         # could be a point at which additional filtering may be applied
-#         return self.get_object_list(request)
-#  
-#     def obj_get(self, bundle, request = None, **kwargs):
-# #         get one object from data source
-#         requestType = kwargs['pk']
-#             
-#         bundle_obj = LongLineReq()
-#         bundle_obj.requestType = requestType
-# 
-#         try:
-#             return bundle_obj
-#         except KeyError:
-#             raise NotFound("Object not found") 
-#    
-#     def obj_create(self, bundle, request = None, **kwargs):
-#         logger.info("Long line request in TA Server")
-#         
-#         # create a new object
-#         bundle.obj = LongLineReq()
-#           
-#         # full_hydrate does the heavy lifting mapping the
-#         # POST-ed payload key/values to object attribute/values
-#         bundle = self.full_hydrate(bundle)
-#         
-#         requestType = bundle.obj.requestType
-#         requestLine = bundle.obj.requestLine
-#         logger.debug("Type of request:",requestType)
-#         logger.debug("Request content:",requestLine)
-#         
-#         if requestType=="fileno":
-#             #response = FileNo.objects.filter(Q(w="patient[age]20") | Q(w="patient[age]23"))
-#             logger.debug("Send internal request")
-#             response = requests.get("http://127.0.0.1:8080/api/v1/fileno/?w="+requestLine)  
-#             logger.debug("List of file no:",response)
-#         else:   
-#             #response = SearchNo.objects.get(w=requestLine)
-#             response = requests.get("http://127.0.0.1:8080/api/v1/search/?w="+requestLine)  
-#             logger.debug("List of search no:",response)
-#         bundle.obj.requestLine = '' # hide requestLine in the response
-#         bundle.obj.requestType = '' # hide requestType in the response
-#         #bundle.data["result"]=response.text
-#         bundle.data["result"]=response
-#         return bundle
-
 
 #===============================================================================
 # "Key" resource
@@ -418,7 +337,7 @@ class KeyResource(ModelResource):
         queryset = Key.objects.all()
         resource_name = 'key'
         authorization = Authorization()
-        fields = ['key']
+        fields = ['key','keyId']
         allowed_methods = ['get','post','delete'] # only allow GET, POST method
         filtering = {
             "key": ['exact'],
@@ -429,6 +348,7 @@ class KeyResource(ModelResource):
 #===============================================================================  
 class Upload(object):
     Lw = ''
+    keyId = ''
     
 #===============================================================================
 # "Search Query" resource
@@ -437,6 +357,7 @@ class UploadResource(Resource):
     Lw = fields.CharField(attribute = 'Lw')
     Lfileno = fields.ListField(attribute='Lfileno',default=[]) # List of fileno
     Lsearchno = fields.ListField(attribute='Lsearchno',default=[]) # List of searchno
+    keyId = fields.CharField(attribute = 'keyId')
     
     class Meta:
         resource_name = 'upload'
@@ -482,8 +403,6 @@ class UploadResource(Resource):
         except KeyError:
             raise NotFound("Object not found") 
 
-    
-    #@transaction.atomic()
     def obj_create(self, bundle, request = None, **kwargs):
         global update_lock
         # Processing POST requests
@@ -505,12 +424,11 @@ class UploadResource(Resource):
         listW = bundle.obj.Lw
         logger.debug("Type of listW: %s",type(listW))
         
+        keyid = bundle.obj.keyId
+        
         logger.debug("Query for returned fileno")
         
-       # with transaction.atomic():
-             #listFileNo = get_object_or_404(FileNo.objects.select_for_update().filter(w__in=listW)) #test
-        #listFileNo = FileNo.objects.select_for_update().filter(w__in=listW) #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
-        listFileNo = FileNo.objects.filter(w__in=listW) #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
+        listFileNo = FileNo.objects.filter(w__in=listW,keyId=keyid) #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
         bundle.obj.Lfileno = listFileNo.values("w","fileno")
                  
         #logger.debug("List of fileno: ()",listFileNo)
@@ -522,9 +440,9 @@ class UploadResource(Resource):
                         
         Ly = []
         for x in listW:
-            y = listFileNo.filter(w=x).first() 
+            y = listFileNo.filter(w=x,keyId=keyid).first() 
             if y==None: # if not found
-                y = FileNo(w=x,fileno=1)
+                y = FileNo(w=x,fileno=1,keyId=keyid)
                 Ly.append(y)
             else: # if found
                 y.fileno = y.fileno+1
@@ -539,8 +457,7 @@ class UploadResource(Resource):
             FileNo.objects.bulk_create(Ly)
             
         logger.debug("Query for searchno")
-        listSearchNo = SearchNo.objects.filter(w__in=listW).values('w','searchno') #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
-       # logger.debug("List of searchno: {}",listSearchNo)
+        listSearchNo = SearchNo.objects.filter(w__in=listW,keyId=keyid).values('w','searchno') #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
         
         bundle.obj.Lsearchno = listSearchNo.values('w','searchno')
         bundle.obj.Lw = ''
