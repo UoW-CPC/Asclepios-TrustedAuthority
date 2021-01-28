@@ -10,7 +10,7 @@ from django.db.models import Q
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from threading import Thread, Lock
-
+from teepclient import simple
 #from django.core import serializers
 #from django.http import HttpResponse
 
@@ -20,12 +20,11 @@ from threading import Thread, Lock
 import json
 import hashlib
 import requests
-
 import sys
 sys.path.append('sjcl-0.2.1/sjcl') #we modified python sjcl a bit to allow define iv, salt of encryption
 from sjcl import SJCL
 import logging
-
+import os
 #===============================================================================
 # Common functions, constants
 #===============================================================================  
@@ -34,6 +33,7 @@ import logging
 logger = logging.getLogger(__name__)
 NO_ATTRIBUTES = 400 # allow to get maximum of NO_ATTRIBUTES items at once
 update_lock = sem = threading.Semaphore()
+URL_TEEP = os.environ['TEEP_SERVER']
 
 #===============================================================================
 # "File Number" resource
@@ -466,3 +466,88 @@ class UploadResource(Resource):
         logger.debug("Thread left critical region =>  {0} ".format(cur_thread.name))
         update_lock.release()
         return bundle # return the list of computed addresses to CSP, which sends the request
+
+#===============================================================================
+# "PubKey" resource
+#===============================================================================
+class PubKey(object):
+    pubkey = ''
+    report = ''
+    enclaveId = ''
+    keyId = ''
+
+class PubKeyResource(Resource):
+    pubkey = fields.CharField(attribute = 'pubkey')
+    report = fields.CharField(attribute = 'report')
+    enclaveId = fields.CharField(attribute = 'enclaveId')
+    keyId = fields.CharField(attribute = 'keyId')
+
+    class Meta:
+        resource_name = 'pubkey'
+        object_class = PubKey
+        authorization = Authorization()
+        allowed_methods = ['get','post'] # only allow GET, POST method
+        field = ['report','pubkey','enclaveId','keyId']
+        always_return_data= False
+    # adapted this from ModelResource
+    def get_resource_uri(self, bundle_or_obj):
+        kwargs = {
+            'resource_name': self._meta.resource_name,
+        }
+ 
+        if isinstance(bundle_or_obj, Bundle):
+            kwargs['pk'] = bundle_or_obj.obj.keyId # pk is referenced in ModelResource
+        else:
+            kwargs['pk'] = bundle_or_obj.keyId
+           
+        if self._meta.api_name is not None:
+            kwargs['api_name'] = self._meta.api_name
+           
+        return self._build_reverse_url('api_dispatch_detail', kwargs = kwargs)
+    
+    def get_object_list(self, request):
+        # inner get of object list... this is where you'll need to
+        # fetch the data from what ever data source
+        return 0
+
+    def obj_get_list(self, request=None, **kwargs):
+        # outer get of object list... this calls get_object_list and
+        # could be a point at which additional filtering may be applied
+        return self.get_object_list(request)
+    
+    def obj_get(self, bundle, request = None, **kwargs):
+        logger.debug("invoke request to teep-server")
+        keyId = kwargs['pk']
+        pk, report,enclave_id = simple.getpubkey(URL_TEEP)
+        bundle_obj = PubKey()
+        bundle_obj.pubkey = pk
+        bundle_obj.report = report
+        bundle_obj.enclaveId = enclave_id
+        bundle_obj.keyId=keyId
+        try:
+            return bundle_obj
+        except KeyError:
+            raise NotFound("Object not found") 
+
+    def obj_create(self, bundle, request=None, **kwargs):
+        logger.info("Store encrypted key to TA")
+
+        # create a new object
+        bundle.obj = PubKey()
+
+        # full_hydrate does the heavy lifting mapping the
+        # POST-ed payload key/values to object attribute/values
+        bundle = self.full_hydrate(bundle)
+
+        # invoke API of TA
+        enclaveId = bundle.obj.enclaveId
+        pubkey = bundle.obj.pubkey
+        keyId = bundle.obj.keyId
+        sealed_pk=simple.sealkey(enclaveId,pubkey,URL_TEEP)
+        Key.objects.create(key=sealed_pk, keyId=keyId)
+
+        bundle.obj.pubkey = ''
+        bundle.obj.report = ''
+        bundle.obj.enclaveId = '' # hide KeyW in the response
+        bundle.obj.keyId = ''
+        return bundle
