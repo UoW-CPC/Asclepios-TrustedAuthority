@@ -23,7 +23,7 @@ searchno_resource = SearchNoResource()
 search_resource = SearchResource();
 key_resource = KeyResource();
 upload_resource = UploadResource();
-#longlinereq_resource = LongLineReqResource();
+longlinereq_resource = LongLineReqResource();
 
 v1_api = Api(api_name='v1')
 v1_api.register(fileno_resource)
@@ -31,7 +31,7 @@ v1_api.register(searchno_resource)
 v1_api.register(search_resource)
 v1_api.register(key_resource)
 v1_api.register(upload_resource)
-#v1_api.register(longlinereq_resource)
+v1_api.register(longlinereq_resource)
 
 urlpatterns = [
     url(r'^admin/', admin.site.urls),
