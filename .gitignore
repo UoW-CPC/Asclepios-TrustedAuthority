@@ -10,3 +10,15 @@ __pycache__/
 
 # Development database
 db.sqlite3
+
+*.o
+
+teepclient/images
+teepclient/*.pem
+teepclient/*.der
+teepclient/test.py
+teepclient/testrsa.py
+
+teepclient/common/remoteattestation_args.h
+teepclient/common/remoteattestation_t.c
+teepclient/common/remoteattestation_t.h
