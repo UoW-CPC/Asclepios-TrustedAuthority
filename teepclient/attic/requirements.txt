@@ -1,0 +1,11 @@
+cbor
+ecdsa
+aiocoap
+git+https://github.com/TimothyClaeys/COSE-PYTHON.git
+
+ocspbuilder
+certvalidator
+ipython
+pycrypto
+cryptography
+oscrypto

@@ -1,0 +1,161 @@
+// Copyright (c) Open Enclave SDK contributors.
+// Licensed under the MIT License.
+
+#include "encryptor.h"
+#include <string.h>
+#include "log.h"
+
+Encryptor::Encryptor() : m_encrypt(true)
+{
+    unsigned char iv[IV_SIZE] = {0xb2,
+                                 0x4b,
+                                 0xf2,
+                                 0xf7,
+                                 0x7a,
+                                 0xc5,
+                                 0xec,
+                                 0x0c,
+                                 0x5e,
+                                 0x1f,
+                                 0x4d,
+                                 0xc1,
+                                 0xae,
+                                 0x46,
+                                 0x5e,
+                                 0x75};
+    memcpy(m_original_iv, iv, IV_SIZE);
+}
+
+int Encryptor::initialize( bool encrypt )
+{
+    int ret = 0;
+    TRACE_ENCLAVE(
+        "ecall_dispatcher::initialize : %s request",
+        encrypt ? "encrypting" : "decrypting");
+
+    m_encrypt = encrypt;
+    memset((void*)m_encryption_key, 0, ENCRYPTION_KEY_SIZE_IN_BYTES);
+    unsigned char key[16] = "itzkbgulrcsjmnv";
+    memcpy(m_encryption_key,key, ENCRYPTION_KEY_SIZE_IN_BYTES);
+    // produce a encryption key
+    /*TRACE_ENCLAVE("produce a encryption key");
+    ret = generate_encryption_key((unsigned char*)m_encryption_key, ENCRYPTION_KEY_SIZE_IN_BYTES);
+    if (ret != 0)
+    {
+        TRACE_ENCLAVE("Enclave: m_encryption_key");
+        for (unsigned int i = 0; i < ENCRYPTION_KEY_SIZE_IN_BYTES; i++)
+            TRACE_ENCLAVE(
+                "m_encryption_key[%d] =0x%02x", i, m_encryption_key[i]);
+        goto exit;
+    }*/
+
+    // initialize aes context
+    mbedtls_aes_init(&m_aescontext);
+
+    // set aes key
+    if (encrypt)
+        ret = mbedtls_aes_setkey_enc(
+            &m_aescontext, m_encryption_key, ENCRYPTION_KEY_SIZE);
+    else
+        ret = mbedtls_aes_setkey_dec(
+            &m_aescontext, m_encryption_key, ENCRYPTION_KEY_SIZE);
+
+    if (ret != 0)
+    {
+        TRACE_ENCLAVE("mbedtls_aes_setkey_dec failed with %d", ret);
+        goto exit;
+    }
+    // init iv
+    memcpy(m_operating_iv, m_original_iv, IV_SIZE);
+exit:
+    return ret;
+}
+
+int Encryptor::encrypt_block(
+    bool encrypt,
+    unsigned char* input_buf,
+    unsigned char** output_buf,
+    size_t size,
+    size_t *out_data_len)
+{
+/*    // pad to multiple of 16 for AES
+    uint8_t decr[ENCRYPTION_KEY_SIZE];
+    memcpy(decr, input_buf, size);
+    size_t decr_len = size;
+    decr_len += 1;  // add a byte (after the padding zeros) to hold the number of padbytes needed
+    int pad = 16 - (decr_len % 16); pad = (pad==16)?0:pad;
+    memset(&decr[decr_len],0,pad);
+    decr[decr_len+pad-1] = pad+1;
+    decr_len += pad;
+
+    int ret = 0;
+    ret = mbedtls_aes_crypt_cbc(
+        &m_aescontext,
+        encrypt ? MBEDTLS_AES_ENCRYPT : MBEDTLS_AES_DECRYPT,
+        decr_len,           // input data length in bytes,
+        m_operating_iv, // Initialization vector (updated after use)
+        decr,
+        output_buf);*/
+/*
+    int ret = 0;
+    ret = mbedtls_aes_crypt_cbc(
+        &m_aescontext,
+        encrypt ? MBEDTLS_AES_ENCRYPT : MBEDTLS_AES_DECRYPT,
+        size,           // input data length in bytes,
+        m_operating_iv, // Initialization vector (updated after use)
+        input_buf,
+        output_buf);
+    if (ret != 0)
+    {
+        TRACE_ENCLAVE("mbedtls_aes_crypt_cbc failed with %d", ret);
+    }
+    return 0;*/
+    mbedtls_aes_context aes;
+
+    unsigned char key[16] = "itzkbgulrcsjmnv";
+    key[15] = 'x';
+
+    unsigned char iv[16] = {0xb2, 0x4b, 0xf2, 0xf7, 0x7a, 0xc5, 0xec, 0x0c, 0x5e, 0x1f, 0x4d, 0xc1, 0xae, 0x46, 0x5e, 0x75};
+    unsigned char iv_backup[16]={0xb2, 0x4b, 0xf2, 0xf7, 0x7a, 0xc5, 0xec, 0x0c, 0x5e, 0x1f, 0x4d, 0xc1, 0xae, 0x46, 0x5e, 0x75};
+    //const unsigned char *input = (const unsigned char*) "Some string to b";
+	//unsigned char *input = (unsigned char*) "Some string to b";
+    unsigned char output[128] = {0};
+    unsigned char output2[128] = {0};
+    unsigned char* output_data = (unsigned char*)oe_host_malloc(16);
+
+    unsigned char input_str[128]={0};
+    memcpy(input_str,input_buf,size*8);
+    
+    if(encrypt==MBEDTLS_AES_ENCRYPT){
+    	// pad to multiple of 16 for AES
+    	size_t enc_len = size + 1;  // add a byte (after the padding zeros) to hold the number of padbytes needed
+    	int pad = 16 - (enc_len % 16); 
+    	pad = (pad==16)?0:pad;
+    	memset(input_str+size,0,pad);//pad 0 from input_str[size] to the end
+    	input_str[enc_len+pad-1] = pad+1;//assign the value "pad+1" to the end
+    	enc_len += pad;
+
+    	mbedtls_aes_setkey_enc( &aes, key, 16*8 );
+    	mbedtls_aes_crypt_cbc( &aes, MBEDTLS_AES_ENCRYPT, enc_len, iv, input_str, output_data );
+	*output_buf = output_data;
+	*out_data_len = strlen((const char*)output_data);
+    } else {
+    	mbedtls_aes_setkey_dec( &aes, key, 16*8 );
+    	mbedtls_aes_crypt_cbc( &aes, MBEDTLS_AES_DECRYPT, strlen((const char*)input_buf), iv_backup, input, output_data);
+   	// remove padding
+    	*output_buf = output_data;
+    	*out_data_len = strlen((const char*)output);
+    	if(enc_len >= output_data[enc_len-1])
+        	*out_data_len -= output_data[enc_len-1];
+    }
+    	
+    mbedtls_aes_free (&aes);
+    return 1;
+}
+
+void Encryptor::close()
+{
+    // free aes context
+    mbedtls_aes_free(&m_aescontext);
+    TRACE_ENCLAVE("ecall_dispatcher::close");
+}
