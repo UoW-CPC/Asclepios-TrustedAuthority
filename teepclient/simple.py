@@ -13,6 +13,13 @@ import Crypto.Cipher.PKCS1_v1_5 as PKCS1_v1_5
 
 #from lib import *
 
+import json
+import logging
+# Get an instance of a logger
+logger = logging.getLogger(__name__)
+
+APP_IMAGE = 'enclave_a/enclave_a.signed'
+
 def catcher(f):
     try: return f()
     except: return None
@@ -98,7 +105,9 @@ def sealingtest(uri='coap://127.0.0.1:5683/teep'):
     # It returns a pubkey and report from that instance
     #ans = install(uri, '/home/ubuntu/Asclepios-TrustedAuthority/teepclient/enclave_a/enclave_a.signed')
     ans = install(uri, 'enclave_a/enclave_a.signed')
-    data = f'Some string to a'.encode()
+    data = f'Some string'.encode()
+    print("in simple.py - input data:",data)
+    print("in simple.py - length of data:",len(data))
     assert len(data)<256-11, "pkcs_v1_5 message length limit exceeded with data"
     #pk = RSA.importKey(trim0(ans['key']))
     #c = PKCS1_v1_5.new(pk).encrypt(data)
@@ -110,13 +119,58 @@ def sealingtest(uri='coap://127.0.0.1:5683/teep'):
     #print(ask(uri, {'unseal':s, 'id':ans['id']})['data'])
 
     # encryption 
-  #  ret = ask(uri, {'encrypt':True, 'id':ans['id'],'message':bytes(data),'key':bytes('itzkbgulrcsjmnv',encoding='utf8')})
-    ret = ask(uri, {'encrypt':True, 'id':ans['id'],'message':data,'key':'itzkbgulrcsjmnv'})
-    print("in simple.py - ciphertext:",ret['message']);
-   
-    print("in simple.py - size of ciphertext:",ret['size']);
-    # decryption
-#    ret = ask(uri, {'encrypt':False, 'id':ans['id'],'message':ret['message'],'key':'itzkbgulrcsjmnv'})
+    key = '123456789123456'
 
- #   print("in simple.py - plaintext:",ret['message']);
- #   print("in simple.py - size of plaintext:",ret['size']);
+    ret = ask(uri, {'encrypt':True, 'id':ans['id'],'message':data,'key':key})
+    print("in simple.py - ciphertext:",ret['message']);
+    print("in simple.py - size of ciphertext:",ret['size']);
+
+    # decryption
+    ret = ask(uri, {'encrypt':False, 'id':ans['id'],'message':ret['message'],'key':key})
+    print("in simple.py - plaintext:",ret['message']);
+    print("in simple.py - size of plaintext:",ret['size']);
+
+def initenclave(uri='coap://127.0.0.1:5683/teep'):
+    ans = install(uri, APP_IMAGE)
+    return ans;
+
+# Retrieve public key from SGX enclave
+def getpubkey(enclave):#,uri='coap://127.0.0.1:5683/teep'):
+    # Ask the remote TEEP agent to create a new instance.
+    # It returns a pubkey and report from that instance
+    #ans = install(uri, '/TA/teepclient/enclave_a/enclave_a.signed')
+    #logger.debug("getpubkey func - generated public key (PEM format):",ans['key'])
+    #pk=ans['key'].decode('utf-8')#trim0.decode.rstrip()
+    #logger.debug("getpubkey func - generated public key (utf-8 decoded):",pk)
+
+    #return pk,ans['report'],ans['id']
+
+    logger.debug("getpubkey func - generated public key (PEM format):",enclave['key'])
+    pk=trim0(enclave['key']).decode('utf-8')#enclave['key'].decode('utf-8')#trim0.decode.rstrip()
+    logger.debug("getpubkey func - generated public key (utf-8 decoded):",pk)
+
+    return pk,enclave['report'],enclave['id'],enclave['sha']
+
+
+# RSA PKCS1_v1_5
+def sealkey(enclave_id,encrypted_key,uri='coap://127.0.0.1:5683/teep'):
+    logger.debug("enclave_id:%s",enclave_id)
+    logger.debug("encrypted_key:%s",encrypted_key)
+    oeid = int(enclave_id)
+    sealed_pk = ask(uri, {'id':oeid, 'seal':b64decode(encrypted_key)})['sealed']
+    logger.debug("unsealed data:%s",ask(uri, {'unseal':sealed_pk, 'id':oeid})['data']) #test only
+    return sealed_pk
+
+
+def genproof(enclave_id,keyW,uri):
+    logger.debug("enclave_id:",enclave_id)
+    logger.debug("keyW:",keyW)
+    oeid = int(enclave_id)
+    m=keyW
+    return m
+
+def encrypt(enclave_id,encrypt,message,key,uri='coap://127.0.0.1:5683/teep'):
+    #logger.debug("enclave_id:{},encrypt:{},message:{},key:{}",enclave_id,encrypt,message,key);
+    ret = ask(uri, {'encrypt':encrypt, 'id':enclave_id,'message':message,'key':key})
+    logger.debug("output:{},size:{}",ret['message'],ret['size'])
+    return ret['message'],ret['size']

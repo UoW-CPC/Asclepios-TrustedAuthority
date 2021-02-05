@@ -80,9 +80,12 @@ void retrieve_private_key(uint8_t**pem_key,size_t*key_size)
     }
 }
 
-void initialize_encryptor(bool encrypt,unsigned char*key)
+void initialize_encryptor(bool encrypt,unsigned char*key)//,unsigned char** output_buf)
 {
     TRACE_ENCLAVE("Initialize encryptor");
+    //unsigned char* output_data = (unsigned char*)oe_host_malloc(16);
+    //memcpy(output_data,key,16);
+    //*output_buf = output_data;
     dispatcher.get_encryptor()->initialize(encrypt,key);
 }
 

@@ -38,7 +38,7 @@ int Encryptor::initialize( bool encrypt, unsigned char*key )
     
     TRACE_ENCLAVE("copy encryption key");
  
-    memcpy(m_encryption_key,key, ENCRYPTION_KEY_SIZE_IN_BYTES);
+    memcpy(m_encryption_key,key,ENCRYPTION_KEY_SIZE_IN_BYTES);
 
     // initialize aes context
     mbedtls_aes_init(&m_aescontext);
@@ -69,6 +69,67 @@ int Encryptor::encrypt_block(
     size_t size,
     size_t *out_data_len)
 {
+    unsigned char output[ENCRYPTION_KEY_SIZE] = {0};
+    unsigned char* output_data = (unsigned char*)oe_host_malloc(ENCRYPTION_KEY_SIZE_IN_BYTES);
+    unsigned char input_str[ENCRYPTION_KEY_SIZE]={0};
+    memcpy(input_str,input_buf,size*8);
+
+    if(encrypt==MBEDTLS_AES_ENCRYPT){
+        // pad to multiple of 16 for AES
+        size_t enc_len = size + 1;  // add a byte (after the padding zeros) to hold the number of padbytes needed
+        int pad = 16 - (enc_len % 16);
+        pad = (pad==16)?0:pad;
+        memset(input_str+size,0,pad);//pad 0 from input_str[size] to the end
+	input_str[enc_len+pad-1] = pad+1;//assign the value "pad+1" to the end
+	enc_len += pad;
+
+        int ret = 0;
+	ret = mbedtls_aes_crypt_cbc( &m_aescontext,
+                        MBEDTLS_AES_ENCRYPT,
+                        enc_len,
+                        m_operating_iv,
+                        input_str,
+                        output );// Initialization vector is updated after use
+        if (ret != 0)
+        {
+                TRACE_ENCLAVE("mbedtls_aes_crypt_cbc failed with %d", ret);
+        } else {
+                memcpy(output_data,output,strlen((const char*)output));
+		*output_buf = output_data;
+                *out_data_len = (int) strlen((const char*)output);
+		/*
+		//decryption - test only
+    		unsigned char output2[128] = {0};
+		mbedtls_aes_setkey_dec( &m_aescontext, m_encryption_key, ENCRYPTION_KEY_SIZE );
+    		mbedtls_aes_crypt_cbc( &m_aescontext, MBEDTLS_AES_DECRYPT, strlen((const char*)output), m_operating_iv, output, output2 );
+    		unsigned char* output_data = (unsigned char*)oe_host_malloc(16);
+        	memcpy(output_data,output2,strlen((const char*)output2));
+       		*output_buf = output_data;
+       		*out_data_len = (int)strlen((const char*)output2);*/
+	}
+    } else { //decryption
+        int ret=0;
+        ret = mbedtls_aes_crypt_cbc( &m_aescontext,
+                        MBEDTLS_AES_DECRYPT,
+                        size,
+                        m_operating_iv,
+                        (const unsigned char*)input_buf,
+                        output_data);
+
+        if (ret != 0)
+        {
+                TRACE_ENCLAVE("mbedtls_aes_crypt_cbc failed with %d", ret);
+        } else {
+		*output_buf = output_data;
+		*out_data_len = strlen((const char*)m_encryption_key);
+		// remove padding
+    		if(size >= output_data[size-1])
+        	     *out_data_len = size - output_data[size-1];
+        }
+    }
+    return 1;
+
+/*
     unsigned char output[128] = {0};
     unsigned char output2[128] = {0};
 
@@ -86,6 +147,7 @@ int Encryptor::encrypt_block(
     *out_data_len = (int)strlen((const char*)output2);
 
     return 1;
+*/
 }
 
 void Encryptor::close()
