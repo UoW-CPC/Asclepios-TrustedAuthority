@@ -1,5 +1,5 @@
 from tastypie.resources import ModelResource, Resource, fields
-from api.models import FileNo,SearchNo,Key
+from api.models import FileNo,SearchNo,Key,EnclaveId
 from tastypie.authorization import Authorization
 from tastypie.constants import ALL, ALL_WITH_RELATIONS
 from tastypie.bundle import Bundle 
@@ -24,7 +24,9 @@ import sys
 sys.path.append('sjcl-0.2.1/sjcl') #we modified python sjcl a bit to allow define iv, salt of encryption
 from sjcl import SJCL
 import logging
+
 import os
+from base64 import b64encode,b64decode
 #===============================================================================
 # Common functions, constants
 #===============================================================================  
@@ -173,7 +175,7 @@ class SearchResource(Resource):
         KeyW = bundle.obj.KeyW
         logger.debug("Type of ciphertext: %s",type(KeyW))
         logger.debug("keyW:%s",KeyW)
-        logger.debug("bundle object:{}",bundle)
+        logger.debug("bundle object:%s",bundle)
         # Recover hash(w) and searchNo[w] from KeyW
         # Retrieve KeyG from database
         keyid = bundle.obj.keyId;
@@ -182,64 +184,20 @@ class SearchResource(Resource):
         KeyG=Key.objects.get(keyId=keyid).key;
         
         logger.debug("key: %s",KeyG)
-        logger.debug("KeyW: %s",KeyW)
+       
+        q = EnclaveId.objects.first()
+        # invoke API of TA
+        enclaveId = q.encId#ENCLAVE['id']#bundle.obj.enclaveId
+        logger.debug("Encrypt data in enclave %d",enclaveId)
+        sealed_pk=simple.sealkey(enclaveId,KeyW,URL_TEEP)
+        simple.encrypt(enclaveId,True,'abc','123',URL_TEEP) #simple.encrypt(0,True,\"hello\",\"123\")"
+        #simple.sealingtest(enclaveId,URL_TEEP)
+       # simple.sealkey(enclaveId,keyW,URL_TEEP)
         
-        
-        try:
-            plaintext = SJCL().decrypt(KeyW, KeyG)
-        except: # cannot decrypt
-            logger.debug("wrong token")
-            bundle.obj.Lta = ''
-            bundle.obj.KeyW = 'error' # hide KeyW in the response
-            return bundle
-            
-        logger.debug("plaintext: %s",plaintext)
-        
-        hashChars = int(hash_length/4) # hash_length/4 = number of characters in hash value = 64
-        
-        plaintext_str = str(plaintext,'utf-8') # convert type from byte (plaintext) to string (plaintext_str)
-        hashW = plaintext_str[0:hashChars]
-        logger.debug("hashW: %s",hashW)
-        try:
-            searchNo = SearchNo.objects.get(w=hashW,keyId=keyid).searchno # check
-        except: # if searchno does not exist
-            searchNo = 0
-        
-        # increase search number
-        searchNo = str(searchNo + 1)
-        
-        logger.debug("hashW: %s, searchNo: %s", hashW, searchNo)
-        
-        plaintext_byte =  str.encode(hashW + searchNo)
-        logger.debug("new plaintext: %s", plaintext_byte)
-        newKeyW = SJCL().encrypt(plaintext_byte,KeyG,SALT,IV) # Compute new KeyW
-        logger.debug("new ciphertext: {}", newKeyW)
-        
-        newKeyW_ciphertext = newKeyW['ct'] # convert type from dict (newKeyW) to byte (newKeyW_byte)
-        logger.debug("newKeyW_ciphertext: %s", newKeyW_ciphertext) 
-        
-        logger.debug("Retrieve fileno")
-        Lta = []
-        try:
-            fileno = FileNo.objects.get(w=hashW,keyId=keyid).fileno
-            logger.debug("fileno from the internal request: %s",fileno)
-            # Compute all addresses with the new key
-            for i in range(1,int(fileno)+1): # file number is counted from 1
-                logger.debug("i: %s",i)
-                logger.debug("newKeyW_ciphertext: %s",str(newKeyW_ciphertext,'utf-8'))
-                input = (str(newKeyW_ciphertext,'utf-8') + str(i) + "0").encode('utf-8')
-                addr = hash(input)
-                logger.debug("hash input: %s",input)
-                logger.debug("hash output (computed from newKeyW): %s", addr)
-                Lta.append(addr)
-        except: # not found
-            logger.debug("Not found fileno")
-        finally:
-            bundle.obj.Lta = Lta
-            bundle.obj.KeyW = '' # hide KeyW in the response
-            bundle.obj.keyId = ''
-            return bundle # return the list of computed addresses to CSP, which sends the request
-
+        bundle.obj.Lta = ''
+        bundle.obj.KeyW = '' # hide KeyW in the response
+        bundle.obj.keyId = enclaveId
+        return bundle # return the list of computed addresses to CSP, which sends the request
 #===============================================================================
 # "Long line request" object
 #===============================================================================  
@@ -473,13 +431,13 @@ class UploadResource(Resource):
 class PubKey(object):
     pubkey = ''
     report = ''
-    enclaveId = ''
+    #enclaveId = ''
     keyId = ''
 
 class PubKeyResource(Resource):
     pubkey = fields.CharField(attribute = 'pubkey')
     report = fields.CharField(attribute = 'report')
-    enclaveId = fields.CharField(attribute = 'enclaveId')
+    #enclaveId = fields.CharField(attribute = 'enclaveId')
     keyId = fields.CharField(attribute = 'keyId')
 
     class Meta:
@@ -487,7 +445,7 @@ class PubKeyResource(Resource):
         object_class = PubKey
         authorization = Authorization()
         allowed_methods = ['get','post'] # only allow GET, POST method
-        field = ['report','pubkey','enclaveId','keyId']
+        field = ['report','pubkey','keyId']
         always_return_data= False
     # adapted this from ModelResource
     def get_resource_uri(self, bundle_or_obj):
@@ -518,12 +476,23 @@ class PubKeyResource(Resource):
     def obj_get(self, bundle, request = None, **kwargs):
         logger.debug("invoke request to teep-server")
         keyId = kwargs['pk']
-        pk, report,enclave_id = simple.getpubkey(URL_TEEP)
+
+        num_enc = EnclaveId.objects.all().count()
+        if (num_enc==0): #if enclave is not initialized
+            ENCLAVE=simple.initenclave(URL_TEEP)
+            pk, report,enclave_id,h = simple.getpubkey(ENCLAVE) #simple.getpubkey(URL_TEEP)
+            EnclaveId.objects.create(encId=enclave_id,pubkey=pk,report=report,sha=h)
+        else:
+            q = EnclaveId.objects.first()
+            pk = q.pubkey
+            report = q.report
+            #enclave_id = q.encId
+
         bundle_obj = PubKey()
         bundle_obj.pubkey = pk
         bundle_obj.report = report
-        bundle_obj.enclaveId = enclave_id
-        bundle_obj.keyId=keyId
+        #bundle_obj.enclaveId = enclave_id
+        bundle_obj.keyId=enclave_id
         try:
             return bundle_obj
         except KeyError:
@@ -539,15 +508,33 @@ class PubKeyResource(Resource):
         # POST-ed payload key/values to object attribute/values
         bundle = self.full_hydrate(bundle)
 
+        q = EnclaveId.objects.first()
         # invoke API of TA
-        enclaveId = bundle.obj.enclaveId
-        pubkey = bundle.obj.pubkey
+        enclaveId = q.encId#ENCLAVE['id']#bundle.obj.enclaveId
+        pubkey = b64decode(bytes(bundle.obj.pubkey,"utf-8")) # convert string into bytes, then decode 
+        logger.debug("public key:{}",pubkey)
         keyId = bundle.obj.keyId
         sealed_pk=simple.sealkey(enclaveId,pubkey,URL_TEEP)
         Key.objects.create(key=sealed_pk, keyId=keyId)
-
+       
         bundle.obj.pubkey = ''
         bundle.obj.report = ''
-        bundle.obj.enclaveId = '' # hide KeyW in the response
+        #bundle.obj.enclaveId = '' # hide KeyW in the response
         bundle.obj.keyId = ''
         return bundle
+
+#===============================================================================
+# "EnclaveId" resource
+#===============================================================================
+class EnclaveIdResource(ModelResource):
+    class Meta:
+        queryset = Key.objects.all()
+        resource_name = 'enclaveid'
+        authorization = Authorization()
+        fields = ['encId']
+        allowed_methods = ['get','post','delete'] # only allow GET, POST method
+        filtering = {
+            "encId": ['exact'],
+        }
+
+
