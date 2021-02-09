@@ -4,7 +4,7 @@
 #include <common/remoteattestation_t.h>
 #include <enclave_b_pubkey.h>
 #include <openenclave/enclave.h>
-
+#include <string.h>
 // For this purpose of this example: demonstrating how to do remote attestation
 // g_enclave_secret_data is hardcoded as part of the enclave. In this sample,
 // the secret data is hard coded as part of the enclave binary. In a real world
@@ -80,13 +80,25 @@ void retrieve_private_key(uint8_t**pem_key,size_t*key_size)
     }
 }
 
-void initialize_encryptor(bool encrypt,unsigned char*key)//,unsigned char** output_buf)
+void initialize_encryptor(bool encrypt,unsigned char*key,size_t size)//,unsigned char** output_buf)
 {
     TRACE_ENCLAVE("Initialize encryptor");
-    //unsigned char* output_data = (unsigned char*)oe_host_malloc(16);
-    //memcpy(output_data,key,16);
+    //unsigned char* output_data = (unsigned char*)oe_host_malloc(size);
+    //memcpy(output_data,key,size);
     //*output_buf = output_data;
     dispatcher.get_encryptor()->initialize(encrypt,key);
+}
+
+void initialize_encryptor_sealkey(bool encrypt,unsigned char*sealed_key,size_t size)//unsigned char** output_buf)
+{
+    TRACE_ENCLAVE("Initialize encryptor with sealed key");
+    //unseal key
+    unsigned char* output_data = (unsigned char*)oe_host_malloc(size);
+    //memset(output_data,0,size);
+    size_t out_data_len;
+    unseal_bytes((uint8_t*)sealed_key,size,(uint8_t**)&output_data,&out_data_len);
+    //*output_buf = output_data;
+    dispatcher.get_encryptor()->initialize(encrypt,output_data);
 }
 
 void encrypt_block(

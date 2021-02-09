@@ -47,6 +47,7 @@ class ecall_dispatcher
      //void  retrieve_private_key(uint8_t&pem_private_key[512]);
     Crypto* get_crypto() { return m_crypto; }
     Encryptor* get_encryptor() { return m_encryptor; }
+    //Attestation* get_attestation() { return m_attestation; }
   private:
     bool initialize(const char* name);
 };

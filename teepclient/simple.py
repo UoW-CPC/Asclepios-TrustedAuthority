@@ -9,22 +9,23 @@ import Crypto.PublicKey.RSA as RSA
 import Crypto.Cipher.PKCS1_OAEP as PKCS1_OAEP
 import Crypto.Cipher.PKCS1_v1_5 as PKCS1_v1_5
 
-#from base64 import b64encode,b64decode
+from base64 import b64encode,b64decode
 
 #from lib import *
 
 import json
 import logging
+import os
 # Get an instance of a logger
 logger = logging.getLogger(__name__)
 
-APP_IMAGE = 'enclave_a/enclave_a.signed'
+APP_IMAGE = os.getcwd() + '/enclave_a/enclave_a.signed'
 
 def catcher(f):
     try: return f()
     except: return None
 
-
+"""
 ### Server
 
 class myresource(aiocoap.resource.Resource):
@@ -74,7 +75,7 @@ def start_server(ip='::', port=5683):
     e = asyncio.get_event_loop()
     e.create_task(ctx)
     e.run_forever()
-
+"""
 
 ### Client
 
@@ -109,15 +110,15 @@ def sealingtest(uri='coap://127.0.0.1:5683/teep'):
     print("in simple.py - input data:",data)
     print("in simple.py - length of data:",len(data))
     assert len(data)<256-11, "pkcs_v1_5 message length limit exceeded with data"
-    #pk = RSA.importKey(trim0(ans['key']))
-    #c = PKCS1_v1_5.new(pk).encrypt(data)
+    pk = RSA.importKey(trim0(ans['key']))
+    c = PKCS1_v1_5.new(pk).encrypt(data)
     # seal data
-    #s = ask(uri, {'id':ans['id'], 'seal':c})['sealed']
+    s = ask(uri, {'id':ans['id'], 'seal':c})['sealed']
     # Since the enclave can open sealed data, it can do things to it.
     # Here we just return it - which is not what one should usually do.
     # typically one would compute some statistic on a medical journal.
-    #print(ask(uri, {'unseal':s, 'id':ans['id']})['data'])
-
+    print(ask(uri, {'unseal':s, 'id':ans['id']})['data'])
+    
     # encryption 
     key = '123456789123456'
 
@@ -154,23 +155,28 @@ def getpubkey(enclave):#,uri='coap://127.0.0.1:5683/teep'):
 
 # RSA PKCS1_v1_5
 def sealkey(enclave_id,encrypted_key,uri='coap://127.0.0.1:5683/teep'):
-    logger.debug("enclave_id:%s",enclave_id)
-    logger.debug("encrypted_key:%s",encrypted_key)
+    logger.debug("enclave_id:{},encrypted key:{}",enclave_id,encrypted_key)
     oeid = int(enclave_id)
-    sealed_pk = ask(uri, {'id':oeid, 'seal':b64decode(encrypted_key)})['sealed']
-    logger.debug("unsealed data:%s",ask(uri, {'unseal':sealed_pk, 'id':oeid})['data']) #test only
+    #sealed_pk = ask(uri, {'id':oeid, 'seal':b64decode(encrypted_key)})['sealed']
+    sealed_pk = ask(uri, {'id':oeid, 'seal':encrypted_key})['sealed']
+    #logger.debug("unsealed data:%s",ask(uri, {'unseal':sealed_pk, 'id':oeid})['data']) #test only
     return sealed_pk
 
-
-def genproof(enclave_id,keyW,uri):
-    logger.debug("enclave_id:",enclave_id)
-    logger.debug("keyW:",keyW)
+# test only
+def unsealkey(enclave_id,sealed_key,uri='coap://127.0.0.1:5683/teep'):
+    logger.debug("enclave_id:{}, sealed key:{}",enclave_id,sealed_key)
     oeid = int(enclave_id)
-    m=keyW
-    return m
+    key = ask(uri, {'id':oeid, 'unseal':sealed_key})['data']
+    return key
 
-def encrypt(enclave_id,encrypt,message,key,uri='coap://127.0.0.1:5683/teep'):
-    #logger.debug("enclave_id:{},encrypt:{},message:{},key:{}",enclave_id,encrypt,message,key);
+# encrypt/decrypt 1 data block using the sealed key
+def encrypt_w_sealkey(enclave_id,encrypt,sealed_key,message,uri='coap://127.0.0.1:5683/teep'):
+    ret = ask(uri, {'enc_with_sealkey':encrypt, 'id':int(enclave_id),'message':message,'sealed_key':sealed_key})
+    logger.debug("output:{},size:{}",ret['message'],ret['size'])
+    return ret['message'],ret['size']
+
+# encrypt/decrypt 1 data block
+def encrypt(enclave_id,encrypt,key,message,uri='coap://127.0.0.1:5683/teep'):
     ret = ask(uri, {'encrypt':encrypt, 'id':enclave_id,'message':message,'key':key})
     logger.debug("output:{},size:{}",ret['message'],ret['size'])
     return ret['message'],ret['size']

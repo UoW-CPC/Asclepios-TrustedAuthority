@@ -42,4 +42,5 @@ class Attestation
         size_t data_size);
 };
 
+
 #endif // OE_SAMPLES_ATTESTATION_ENC_ATTESTATION_H

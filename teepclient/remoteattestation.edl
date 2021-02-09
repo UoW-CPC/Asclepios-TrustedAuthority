@@ -32,9 +32,15 @@ enclave {
         //public void retrieve_private_key([out] uint8_t**pem_key,[out] size_t* key_size); //test only
 
         public void initialize_encryptor( bool encrypt,
-					  [in] unsigned char*key);
+					  [in, count=size] unsigned char*key,
+					  size_t size);
 					  //[out] unsigned char** output_buf );
         
+        public void initialize_encryptor_sealkey( bool encrypt,
+                                          [in, count=size] unsigned char*sealed_key,
+					  size_t size);
+					 // [out] unsigned char** output_buf );
+
         public void encrypt_block(bool encrypt, 
                                         [in, count=size] unsigned char* input_buf, 
                                         [out] unsigned char** output_buf, 
