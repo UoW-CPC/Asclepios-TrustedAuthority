@@ -182,17 +182,19 @@ class SearchResource(Resource):
         logger.debug("Id of key:%s",bundle.obj.keyId);
 
         KeyG=Key.objects.get(keyId=keyid).key;
-        
-        logger.debug("key: %s",KeyG)
+        #key=KeyG.decode('unicode_escape').encode('latin1') # convert string got from database into the right format (for instance, \\ is converted into \)
+        logger.debug("KeyG: %s",KeyG)
        
         q = EnclaveId.objects.first()
         # invoke API of TA
-        enclaveId = q.encId#ENCLAVE['id']#bundle.obj.enclaveId
-        logger.debug("Encrypt data in enclave %d",enclaveId)
-        sealed_pk=simple.sealkey(enclaveId,KeyW,URL_TEEP)
-        simple.encrypt(enclaveId,True,'abc','123',URL_TEEP) #simple.encrypt(0,True,\"hello\",\"123\")"
-        #simple.sealingtest(enclaveId,URL_TEEP)
-       # simple.sealkey(enclaveId,keyW,URL_TEEP)
+        enclaveId = q.encId
+        message = b'Some string to b'
+        logger.debug("Encrypt data in enclave %d, plaintext:%s",enclaveId,message)
+        #key=f'123456789123456'.encode()
+        ct,size_ct = simple.encrypt_w_sealkey(enclaveId,True,KeyG,message,URL_TEEP);
+        logger.debug("ciphertext:%s,size:%d",ct,size_ct)
+        pt,size_pt=simple.encrypt_w_sealkey(enclaveId,False,KeyG,ct,URL_TEEP)
+        logger.debug("plaintext:%s,size:%d",pt,size_pt)
         
         bundle.obj.Lta = ''
         bundle.obj.KeyW = '' # hide KeyW in the response
@@ -512,7 +514,7 @@ class PubKeyResource(Resource):
         # invoke API of TA
         enclaveId = q.encId#ENCLAVE['id']#bundle.obj.enclaveId
         pubkey = b64decode(bytes(bundle.obj.pubkey,"utf-8")) # convert string into bytes, then decode 
-        logger.debug("public key:{}",pubkey)
+        logger.debug("api/resource.py - public key:%s",pubkey)
         keyId = bundle.obj.keyId
         sealed_pk=simple.sealkey(enclaveId,pubkey,URL_TEEP)
         Key.objects.create(key=sealed_pk, keyId=keyId)
