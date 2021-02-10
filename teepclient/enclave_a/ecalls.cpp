@@ -99,6 +99,7 @@ void initialize_encryptor_sealkey(bool encrypt,unsigned char*sealed_key,size_t s
     unseal_bytes((uint8_t*)sealed_key,size,(uint8_t**)&output_data,&out_data_len);
     //*output_buf = output_data;
     dispatcher.get_encryptor()->initialize(encrypt,output_data);
+    oe_host_free((void*)output_data);
 }
 
 void encrypt_block(
