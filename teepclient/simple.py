@@ -147,16 +147,16 @@ def getpubkey(enclave):#,uri='coap://127.0.0.1:5683/teep'):
 
     #return pk,ans['report'],ans['id']
 
-    logger.debug("getpubkey func - generated public key (PEM format):",enclave['key'])
+    logger.debug("getpubkey func - generated public key (PEM format):{0}".format(enclave['key']))
     pk=trim0(enclave['key']).decode('utf-8')#enclave['key'].decode('utf-8')#trim0.decode.rstrip()
-    logger.debug("getpubkey func - generated public key (utf-8 decoded):",pk)
+    logger.debug("getpubkey func - generated public key (utf-8 decoded):{0}".format(pk))
 
     return pk,enclave['report'],enclave['id'],enclave['sha']
 
 
 # RSA PKCS1_v1_5
 def sealkey(enclave_id,encrypted_key,uri='coap://127.0.0.1:5683/teep'):
-    logger.debug("enclave_id:{},encrypted key:{}",enclave_id,encrypted_key)
+    logger.debug("enclave_id:%s,encrypted key:%s",enclave_id,encrypted_key)
     oeid = int(enclave_id)
     #sealed_pk = ask(uri, {'id':oeid, 'seal':b64decode(encrypted_key)})['sealed']
     sealed_pk = ask(uri, {'id':oeid, 'seal':encrypted_key})['sealed']
@@ -165,7 +165,7 @@ def sealkey(enclave_id,encrypted_key,uri='coap://127.0.0.1:5683/teep'):
 
 # test only
 def unsealkey(enclave_id,sealed_key,uri='coap://127.0.0.1:5683/teep'):
-    logger.debug("enclave_id:{}, sealed key:{}",enclave_id,sealed_key)
+    logger.debug("enclave_id:%s, sealed key:%s",enclave_id,sealed_key)
     oeid = int(enclave_id)
     key = ask(uri, {'id':oeid, 'unseal':sealed_key})['data']
     return key
@@ -173,11 +173,11 @@ def unsealkey(enclave_id,sealed_key,uri='coap://127.0.0.1:5683/teep'):
 # encrypt/decrypt 1 data block using the sealed key
 def encrypt_w_sealkey(enclave_id,encrypt,sealed_key,message,uri='coap://127.0.0.1:5683/teep'):
     ret = ask(uri, {'enc_with_sealkey':encrypt, 'id':int(enclave_id),'message':message,'sealed_key':sealed_key})
-    logger.debug("output:{},size:{}",ret['message'],ret['size'])
+    logger.debug("sealed key:%s,input:%s,input size:%d,output:%s,size:%d",sealed_key,message,len(message),ret['message'],ret['size'])
     return ret['message'],ret['size']
 
 # encrypt/decrypt 1 data block
 def encrypt(enclave_id,encrypt,key,message,uri='coap://127.0.0.1:5683/teep'):
     ret = ask(uri, {'encrypt':encrypt, 'id':enclave_id,'message':message,'key':key})
-    logger.debug("output:{},size:{}",ret['message'],ret['size'])
+    logger.debug("output:%s,size:%d",ret['message'],ret['size'])
     return ret['message'],ret['size']
