@@ -6,7 +6,8 @@
 #include <string>
 #include "attestation.h"
 #include "crypto.h"
-#include "encryptor.h"
+#include "aes_ccm.h"
+//#include "encryptor.h"
 
 using namespace std;
 
@@ -27,7 +28,8 @@ class ecall_dispatcher
     enclave_config_data_t* m_enclave_config;
     unsigned char m_other_enclave_mrsigner[32];
     
-    Encryptor* m_encryptor; //AES encryption
+    //Encryptor* m_encryptor; //AES-CBC encryption
+    EncryptorCCM* m_encryptor; //AES-CCM encryption
   public:
     ecall_dispatcher(const char* name, enclave_config_data_t* enclave_config);
     ~ecall_dispatcher();
@@ -46,7 +48,8 @@ class ecall_dispatcher
         size_t data_len);
      //void  retrieve_private_key(uint8_t&pem_private_key[512]);
     Crypto* get_crypto() { return m_crypto; }
-    Encryptor* get_encryptor() { return m_encryptor; }
+    EncryptorCCM* get_encryptor() { return m_encryptor; }
+    //Encryptor* get_encryptor() { return m_encryptor; }
     //Attestation* get_attestation() { return m_attestation; }
   private:
     bool initialize(const char* name);

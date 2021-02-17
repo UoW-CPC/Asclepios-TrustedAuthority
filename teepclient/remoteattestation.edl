@@ -29,13 +29,11 @@ enclave {
                             [out] uint8_t** out,
                             [out] size_t *out_size);
         
-        //public void retrieve_private_key([out] uint8_t**pem_key,[out] size_t* key_size); //test only
-
+        /* // AES-CBC
         public void initialize_encryptor( bool encrypt,
 					  [in, count=size] unsigned char*key,
 					  size_t size);
 					  //[out] unsigned char** output_buf );
-        
         public void initialize_encryptor_sealkey( bool encrypt,
                                           [in, count=size] unsigned char*sealed_key,
 					  size_t size);
@@ -47,8 +45,23 @@ enclave {
                                         size_t size,
                                         [out] size_t *out_data_len);
 
+        public void close_encryptor();*/
+        
+        // AES CCM
+ 	public void initialize_encryptor( [in, count=size] unsigned char*key,
+                                          size_t size);
+                                          //[out] unsigned char** output_buf );
+        public void initialize_encryptor_sealkey([in, count=size] unsigned char*					sealed_key,
+                                        size_t size);
+                                        // [out] unsigned char** output_buf );
+
+        public void encrypt_block(bool encrypt,
+                                        [in, count=size] unsigned char* input_buf,
+                                        [out] unsigned char** output_buf,
+                                        size_t size,
+                                        [out] size_t *out_data_len);
+
         public void close_encryptor();
-	public void test();
 	};
     //untrusted {
     //    no untrusted functions in this sample

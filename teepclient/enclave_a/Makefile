@@ -37,9 +37,9 @@ build:
 	oeedger8r ../remoteattestation.edl --trusted --trusted-dir ../common \
 		--search-path $(INCDIR) \
 		--search-path $(INCDIR)/openenclave/edl/sgx
-	$(CXX) -g -c $(CXXFLAGS) $(INCLUDES) -I. -I.. -std=c++11 -DOE_API_VERSION=2 ecalls.cpp ../common/attestation.cpp ../common/crypto.cpp ../common/dispatcher.cpp ../common/encryptor.cpp ../common/keys.cpp
+	$(CXX) -g -c $(CXXFLAGS) $(INCLUDES) -I. -I.. -std=c++11 -DOE_API_VERSION=2 ecalls.cpp ../common/attestation.cpp ../common/crypto.cpp ../common/dispatcher.cpp ../common/aes_ccm.cpp
 	$(CC) -g -c $(CFLAGS) $(CINCLUDES) -I.. -DOE_API_VERSION=2 ../common/remoteattestation_t.c
-	$(CXX) -o enclave_a encryptor.o keys.o attestation.o crypto.o ecalls.o dispatcher.o remoteattestation_t.o $(LDFLAGS) $(CRYPTO_LDFLAGS)
+	$(CXX) -o enclave_a aes_ccm.o attestation.o crypto.o ecalls.o dispatcher.o remoteattestation_t.o $(LDFLAGS) $(CRYPTO_LDFLAGS)
 
 sign:
 	oesign sign -e enclave_a -c enc.conf -k private.pem

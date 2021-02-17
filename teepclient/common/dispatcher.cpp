@@ -7,7 +7,7 @@
 ecall_dispatcher::ecall_dispatcher(
     const char* name,
     enclave_config_data_t* enclave_config)
-    : m_crypto(NULL), m_attestation(NULL)
+	: m_crypto(NULL), m_attestation(NULL), m_encryptor(NULL)
 {
     m_enclave_config = enclave_config;
     m_initialized = initialize(name);
@@ -71,7 +71,8 @@ bool ecall_dispatcher::initialize(const char* name)
         goto exit;
     }
 
-    m_encryptor = new Encryptor();
+    //m_encryptor = new Encryptor();
+    m_encryptor = new EncryptorCCM();
     if (m_encryptor == NULL)
     {
         goto exit;
