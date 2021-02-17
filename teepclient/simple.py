@@ -19,8 +19,8 @@ import os
 # Get an instance of a logger
 logger = logging.getLogger(__name__)
 
-APP_IMAGE = os.getcwd() + '/teepclient/enclave_a/enclave_a.signed'
-#APP_IMAGE = os.getcwd() + '/enclave_a/enclave_a.signed'
+#APP_IMAGE = os.getcwd() + '/teepclient/enclave_a/enclave_a.signed'
+APP_IMAGE = os.getcwd() + '/enclave_a/enclave_a.signed'
 
 def catcher(f):
     try: return f()
@@ -133,6 +133,7 @@ def sealingtest(uri='coap://127.0.0.1:5683/teep'):
     print("in simple.py - size of plaintext:",ret['size']);
 
 def initenclave(uri='coap://127.0.0.1:5683/teep'):
+    print("initiate enclave")
     ans = install(uri, APP_IMAGE)
     return ans;
 

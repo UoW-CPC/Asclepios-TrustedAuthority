@@ -60,32 +60,14 @@ int verify_report_and_set_pubkey(
         pem_key, key_size, remote_report, remote_report_size);
 }
 
-//test only
-void retrieve_private_key(uint8_t**pem_key,size_t*key_size)
-{   
-    TRACE_ENCLAVE("retrieve private key");
-    uint8_t pem_private_key[512];
-    int ret = 1;
-    Crypto* crypto = dispatcher.get_crypto();
-    crypto->retrieve_private_key(pem_private_key);
-    uint8_t* key_buf = NULL;
-    key_buf = (uint8_t*)oe_host_malloc(512);
-    if (key_buf == NULL)
-    {
-        ret = OE_OUT_OF_MEMORY;
-    }else{
-        memcpy(key_buf, pem_private_key, sizeof(pem_private_key));
-        *pem_key = key_buf;
-        *key_size = sizeof(pem_private_key);
-    }
-}
-
+/*
+//AES-CBC
 void initialize_encryptor(bool encrypt,unsigned char*key,size_t size)//,unsigned char** output_buf)
 {
     TRACE_ENCLAVE("Initialize encryptor");
     //unsigned char* output_data = (unsigned char*)oe_host_malloc(size);
     //memcpy(output_data,key,size);
-    //*output_buf = output_data;
+    // *output_buf = output_data;
     dispatcher.get_encryptor()->initialize(encrypt,key);
 }
 
@@ -97,7 +79,7 @@ void initialize_encryptor_sealkey(bool encrypt,unsigned char*sealed_key,size_t s
     //memset(output_data,0,size);
     size_t out_data_len;
     unseal_bytes((uint8_t*)sealed_key,size,(uint8_t**)&output_data,&out_data_len);
-    //*output_buf = output_data;
+    // *output_buf = output_data;
     dispatcher.get_encryptor()->initialize(encrypt,output_data);
     oe_host_free((void*)output_data);
 }
@@ -117,7 +99,43 @@ void close_encryptor()
 {
     dispatcher.get_encryptor()->close();
 }
+*/
 
-void test()
+// AES-CCM
+void initialize_encryptor(unsigned char*key,size_t size)//,unsigned char** output_buf)
 {
+    TRACE_ENCLAVE("Initialize encryptor");
+    //unsigned char* output_data = (unsigned char*)oe_host_malloc(size);
+    //memcpy(output_data,key,size);
+    // *output_buf = output_data;
+    dispatcher.get_encryptor()->initialize(key);
+}
+
+void initialize_encryptor_sealkey(unsigned char*sealed_key,size_t size)//unsigned char** output_buf)
+{
+    TRACE_ENCLAVE("Initialize encryptor with sealed key");
+    //unseal key
+    unsigned char* output_data = (unsigned char*)oe_host_malloc(size);
+    //memset(output_data,0,size);
+    size_t out_data_len;
+    unseal_bytes((uint8_t*)sealed_key,size,(uint8_t**)&output_data,&out_data_len);
+    //*output_buf = output_data;
+    dispatcher.get_encryptor()->initialize(output_data); // AES-CBC
+    oe_host_free((void*)output_data);
+}
+
+void encrypt_block(
+    bool encrypt,
+    unsigned char* input_buf,
+    unsigned char** output_buf,
+    size_t size,
+    size_t*out_data_len)
+{
+    TRACE_ENCLAVE("Encrypt block");
+    dispatcher.get_encryptor()->encrypt_block(encrypt, input_buf, output_buf, size,out_data_len);
+}
+
+void close_encryptor()
+{
+    dispatcher.get_encryptor()->close();
 }
