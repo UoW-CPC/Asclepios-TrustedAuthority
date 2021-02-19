@@ -5,6 +5,7 @@
 #include <enclave_b_pubkey.h>
 #include <openenclave/enclave.h>
 #include <string.h>
+#include <stdio.h>
 // For this purpose of this example: demonstrating how to do remote attestation
 // g_enclave_secret_data is hardcoded as part of the enclave. In this sample,
 // the secret data is hard coded as part of the enclave binary. In a real world
@@ -111,7 +112,7 @@ void initialize_encryptor(unsigned char*key,size_t size)//,unsigned char** outpu
     dispatcher.get_encryptor()->initialize(key);
 }
 
-void initialize_encryptor_sealkey(unsigned char*sealed_key,size_t size)//unsigned char** output_buf)
+void initialize_encryptor_sealkey(unsigned char*sealed_key,size_t size)//,unsigned char** output_buf)
 {
     TRACE_ENCLAVE("Initialize encryptor with sealed key");
     //unseal key
@@ -119,8 +120,18 @@ void initialize_encryptor_sealkey(unsigned char*sealed_key,size_t size)//unsigne
     //memset(output_data,0,size);
     size_t out_data_len;
     unseal_bytes((uint8_t*)sealed_key,size,(uint8_t**)&output_data,&out_data_len);
+
+    //convert output_data to unsigned char*
     //*output_buf = output_data;
-    dispatcher.get_encryptor()->initialize(output_data); // AES-CBC
+    
+    // convert hex string (like "d8ccaa753e2983f03657ab3c8a68a85a") into array like  output_data1[] = {0xd8,0xcc,0xaa,0x75,0x3e,0x29,0x83,0xf0,0x36,0x57,0xab,0x3c,0x8a,0x68,0xa8,0x5a}
+    unsigned char output_data1[size];
+
+    for (int i = 0; i < size; i++) {
+        sscanf((const char*)output_data + 2*i, "%02x", (unsigned int *)&output_data1[i]);
+    }
+
+    dispatcher.get_encryptor()->initialize((unsigned char*)output_data1); // AES-CCM
     oe_host_free((void*)output_data);
 }
 
