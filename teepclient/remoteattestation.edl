@@ -53,7 +53,7 @@ enclave {
                                           //[out] unsigned char** output_buf );
         public void initialize_encryptor_sealkey([in, count=size] unsigned char*					sealed_key,
                                         size_t size);
-                                        // [out] unsigned char** output_buf );
+                                        //[out] unsigned char** output_buf );
 
         public void encrypt_block(bool encrypt,
                                         [in, count=size] unsigned char* input_buf,
