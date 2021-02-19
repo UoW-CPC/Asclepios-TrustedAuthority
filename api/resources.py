@@ -35,6 +35,7 @@ from base64 import b64encode,b64decode
 logger = logging.getLogger(__name__)
 NO_ATTRIBUTES = 400 # allow to get maximum of NO_ATTRIBUTES items at once
 update_lock = sem = threading.Semaphore()
+#URL_TEEP = "http://127.0.0.1:5683"
 URL_TEEP = os.environ['TEEP_SERVER']
 
 #===============================================================================
@@ -172,7 +173,7 @@ class SearchResource(Resource):
         # POST-ed payload key/values to object attribute/values
         bundle = self.full_hydrate(bundle)
         
-        KeyW = bundle.obj.KeyW
+        KeyW = b64decode(bundle.obj.KeyW) # base64 -> bytes
         logger.debug("Type of ciphertext: %s",type(KeyW))
         logger.debug("keyW:%s",KeyW)
         logger.debug("bundle object:%s",bundle)
@@ -181,24 +182,45 @@ class SearchResource(Resource):
         keyid = bundle.obj.keyId;
         logger.debug("Id of key:%s",bundle.obj.keyId);
 
-        KeyG=Key.objects.get(keyId=keyid).key;
-        #key=KeyG.decode('unicode_escape').encode('latin1') # convert string got from database into the right format (for instance, \\ is converted into \)
-        logger.debug("KeyG: %s",KeyG)
-       
-        q = EnclaveId.objects.first()
+        KeyG=Key.objects.get(keyId=keyid).key; # type of KeyG: string
+        KeyG=b64decode(KeyG)
+        #KeyG = KeyG.encode(); # convert from string to bytes before applying unsealing
+        #KeyG=KeyG.decode('unicode_escape').encode('latin1') # convert string got from database into the right format (for instance, \\ is converted into \)
+        logger.debug("KeyG: %s, type:{},size:{}",KeyG,type(KeyG),len(KeyG))
+        
+        q = EnclaveId.objects.first() # get existed enclave id
         # invoke API of TA
         enclaveId = q.encId
-        message = b'Some string to b'
-        logger.debug("Encrypt data in enclave %d, plaintext:%s",enclaveId,message)
-        #key=f'123456789123456'.encode()
-        ct,size_ct = simple.encrypt_w_sealkey(enclaveId,True,KeyG,message,URL_TEEP);
-        logger.debug("ciphertext:%s,size:%d",ct,size_ct)
-        pt,size_pt=simple.encrypt_w_sealkey(enclaveId,False,KeyG,ct,URL_TEEP)
+
+        # encryption - for testing only
+        #message = b'hello'
+        
+        #hex_string = "d8 cc aa 75 3e 29 83 f0 36 57 ab 3c 8a 68 a8 5a"
+        #key=bytes.fromhex(hex_string)
+        
+        #key=bytes.fromhex(b'd8ccaa753e2983f03657ab3c8a68a85a'.decode("utf-8"))
+        
+        key=b64decode(b'2MyqdT4pg/A2V6s8imioWg==')
+        #logger.debug("Encrypt data in enclave %d, plaintext:%s",enclaveId,message)
+        #ct,size_ct = simple.encrypt_w_sealkey(enclaveId,True,KeyG,message,URL_TEEP);
+        #ct,size_ct = simple.encrypt(enclaveId,True,key,message,URL_TEEP);
+        #logger.debug("ciphertext 1:%s,size:%d,ciphertext 2:%s",ct,size_ct,KeyW);
+        
+        # unseal key - for testing only
+        #unseal_key = simple.unsealkey(enclaveId,KeyG,URL_TEEP);
+        #logger.debug("unseal key:%s",unseal_key);
+        
+        # decryption
+        sealed_key = KeyG
+        #sealed_key=b'Gk\xb5\xe7RP}\x93\x8dsv\xb7\x11\xf7\xbd\xd5\xc9\xc0\x99\xd9s\x0e\x90\xba[^\xafR/;:\x19<4`N\x9b\x1f\x05?\x94g\xbd8\xa5\xfe\xde\xbd\xfc\xfe\xfa\xe1\xd6\xe3\xd8\xc4U\xc9\xb1\xfc\xac<|\xf8'
+        logger.debug("sealed_key: %s, type:{},size:{}",sealed_key,type(sealed_key),len(sealed_key))
+        pt,size_pt=simple.encrypt_w_sealkey(enclaveId,False,sealed_key,KeyW,URL_TEEP)
+        #pt,size_pt=simple.encrypt(enclaveId,False,key,KeyW,URL_TEEP)
         logger.debug("plaintext:%s,size:%d",pt,size_pt)
         
         bundle.obj.Lta = ''
-        bundle.obj.KeyW = '' # hide KeyW in the response
-        bundle.obj.keyId = enclaveId
+        bundle.obj.KeyW = pt # hide KeyW in the response
+        bundle.obj.keyId = ''
         return bundle # return the list of computed addresses to CSP, which sends the request
 #===============================================================================
 # "Long line request" object
@@ -488,7 +510,7 @@ class PubKeyResource(Resource):
             q = EnclaveId.objects.first()
             pk = q.pubkey
             report = q.report
-            #enclave_id = q.encId
+            enclave_id = q.encId
 
         bundle_obj = PubKey()
         bundle_obj.pubkey = pk
@@ -517,6 +539,8 @@ class PubKeyResource(Resource):
         logger.debug("api/resource.py - public key:%s",pubkey)
         keyId = bundle.obj.keyId
         sealed_pk=simple.sealkey(enclaveId,pubkey,URL_TEEP)
+        sealed_pk=b64encode(sealed_pk).decode() # encode sealed_pk into base64, then convert it into string
+        logger.debug("api/resource.py - sealed key:%s,type:%s",sealed_pk,type(sealed_pk))
         Key.objects.create(key=sealed_pk, keyId=keyId)
        
         bundle.obj.pubkey = ''
