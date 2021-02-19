@@ -39,28 +39,4 @@ class Encryptor
         size_t size,
 	size_t *out_data_len);
     void close();
-   // int generate_encryption_key(unsigned char* key, unsigned int key_len);
-  private:
-    int generate_encryption_key(unsigned char* key, unsigned int key_len);
-  /*  int generate_password_key(
-        const char* password,
-        unsigned char* key,
-        unsigned int key_len);
-    int generate_encryption_key(unsigned char* key, unsigned int key_len);
-    int prepare_encryption_header(encryption_header_t* header, string password);
-    int parse_encryption_header(encryption_header_t* header, string password);
-    int cipher_encryption_key(
-        bool encrypt,
-        unsigned char* input_data,
-        unsigned int input_data_size,
-        unsigned char* encrypt_key,
-        unsigned char* output_data,
-        unsigned int output_data_size);
-    int Sha256(const uint8_t* data, size_t data_size, uint8_t sha256[32]);
-    void dump_data(const char* name, unsigned char* data, size_t data_size);
-    int process_encryption_header(
-        bool encrypt,
-        const char* password,
-        size_t password_len,
-        encryption_header_t* header);*/
 };
