@@ -19,8 +19,8 @@ import os
 # Get an instance of a logger
 logger = logging.getLogger(__name__)
 
-#APP_IMAGE = os.getcwd() + '/teepclient/enclave_a/enclave_a.signed'
-APP_IMAGE = os.getcwd() + '/enclave_a/enclave_a.signed'
+APP_IMAGE = os.getcwd() + '/teepclient/enclave_a/enclave_a.signed'
+#APP_IMAGE = os.getcwd() + '/enclave_a/enclave_a.signed'
 
 def catcher(f):
     try: return f()
