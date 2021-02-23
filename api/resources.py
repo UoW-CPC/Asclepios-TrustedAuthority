@@ -223,8 +223,9 @@ class SearchResource(Resource):
                 logger.debug("plaintext:%s,size:%d",plaintext,size_pt)
             else: # SGX is not enabled
                 logger.debug("decrypting without sgx")
-                logger.debug("KeyW:{},KeyG:{}".format(KeyW,KeyG))
-                plaintext = SJCL().decrypt(KeyW, KeyG)
+                logger.debug("KeyW:{},KeyG:{},type of KeyG:{}".format(KeyW,KeyG,type(KeyG)))
+                #plaintext = SJCL().decrypt(KeyW, KeyG) # decrypt using passphrase (key is generated from passphrase)
+                plaintext = SJCL().decrypt(KeyW, KeyG, True) # decrypt using key
                 logger.debug("plaintext:%s",plaintext)
         except: # cannot decrypt
             logger.debug("wrong token")
@@ -253,7 +254,8 @@ class SearchResource(Resource):
             plaintext_byte =  str.encode(hashW + searchNo) # string -> bytes
             logger.debug("new plaintext: %s", plaintext_byte)
         
-            newKeyW = SJCL().encrypt(plaintext_byte,KeyG,SALT,IV,MODE,ITER,int(KS/8)) # Compute new KeyW    
+            #newKeyW = SJCL().encrypt(plaintext_byte,KeyG,SALT,IV,MODE,ITER,int(KS/8)) # Compute new KeyW using passphrase (key is generated from passphrase)
+            newKeyW = SJCL().encrypt(plaintext_byte,KeyG,SALT,IV,MODE,ITER,int(KS/8),True) # Compute new KeyW using key
             logger.debug("new ciphertext: {}".format(newKeyW))
 
             newKeyW_ciphertext = newKeyW['ct'] # convert type from dict (newKeyW) to byte (newKeyW_byte)
