@@ -84,7 +84,7 @@ class SJCL(object):
         self.salt_size = 8  # bytes
         self.prf = lambda p, s: HMAC.new(p, s, SHA256).digest()
 
-    def decrypt(self, data, passphrase):
+    def decrypt(self, data, passphrase, iskey=False):
         if data["cipher"] != "aes":
             raise Exception("only aes cipher supported")
 
@@ -112,13 +112,17 @@ class SJCL(object):
         if dkLen != 16 and dkLen != 32:
             raise Exception("key length should be 16 bytes or 32 bytes")
 
-        key = PBKDF2(
+        if iskey==False: # if key needs to be generated from passphrase
+            key = PBKDF2(
             passphrase,
             salt,
             count=data['iter'],
             dkLen=dkLen,
             prf=self.prf
-        )
+            )
+        else: # if passphrase is key
+            key = bytes.fromhex(passphrase)
+        
 #       print "key", hex_string(key)
         if aes_mode == AES.MODE_CCM:
             # Fix padding
@@ -153,7 +157,7 @@ class SJCL(object):
 
         return plaintext
 
-    def encrypt(self, plaintext, passphrase, salt = "", iv="", mode="ccm", count=10000, dkLen=16):
+    def encrypt(self, plaintext, passphrase, salt = "", iv="", mode="ccm", count=10000, dkLen=16, iskey=False):
         # dkLen = key length in bytes
         aes_mode = get_aes_mode(mode)
         tlen = DEFAULT_TLEN[aes_mode]
@@ -169,8 +173,12 @@ class SJCL(object):
         if iv == "":    
             iv = get_random_bytes(16)  # TODO dkLen?
 
-        key = PBKDF2(passphrase, salt, count=count, dkLen=dkLen, prf=self.prf)
-
+        if iskey==False: # if key needs to be generated from passphrase
+            key = PBKDF2(passphrase, salt, count=count, dkLen=dkLen, prf=self.prf)
+        else: # if passphrase is key
+            key = bytes.fromhex(passphrase)
+            #print("from sjcl - key:{}".format(key))
+        
         # TODO plaintext padding?
         if aes_mode == AES.MODE_CCM:
             nonce = truncate_iv(iv, len(plaintext) * 8, tlen)
