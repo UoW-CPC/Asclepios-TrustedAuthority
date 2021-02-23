@@ -3,7 +3,7 @@ from api.models import FileNo,SearchNo,Key,EnclaveId
 from tastypie.authorization import Authorization
 from tastypie.constants import ALL, ALL_WITH_RELATIONS
 from tastypie.bundle import Bundle 
-from parameters import SALT, IV, hash_length # KeyG
+from parameters import SALT, IV, hash_length, MODE, ITER, KS # KeyG
 from django.db.models import Q
 #from django.db import transaction # test
 #from django.shortcuts import get_object_or_404 #test
@@ -37,7 +37,7 @@ NO_ATTRIBUTES = 400 # allow to get maximum of NO_ATTRIBUTES items at once
 update_lock = sem = threading.Semaphore()
 #URL_TEEP = "http://127.0.0.1:5683"
 URL_TEEP = os.environ['TEEP_SERVER']
-
+SGX_ENABLE=os.environ['SGX'] # True if sgx is enabled, False otherwise
 #===============================================================================
 # "File Number" resource
 #===============================================================================
@@ -173,24 +173,28 @@ class SearchResource(Resource):
         # POST-ed payload key/values to object attribute/values
         bundle = self.full_hydrate(bundle)
         
-        KeyW = b64decode(bundle.obj.KeyW) # base64 -> bytes
+        #KeyW = b64decode(bundle.obj.KeyW) # base64 -> bytes
+        KeyW = bundle.obj.KeyW
         logger.debug("Type of ciphertext: %s",type(KeyW))
         logger.debug("keyW:%s",KeyW)
         logger.debug("bundle object:%s",bundle)
         # Recover hash(w) and searchNo[w] from KeyW
         # Retrieve KeyG from database
         keyid = bundle.obj.keyId;
-        logger.debug("Id of key:%s",bundle.obj.keyId);
+        logger.debug("Id of key:%s",keyid);
 
         KeyG=Key.objects.get(keyId=keyid).key; # type of KeyG: string
-        KeyG=b64decode(KeyG)
-        #KeyG = KeyG.encode(); # convert from string to bytes before applying unsealing
-        #KeyG=KeyG.decode('unicode_escape').encode('latin1') # convert string got from database into the right format (for instance, \\ is converted into \)
-        logger.debug("KeyG: %s, type:{},size:{}",KeyG,type(KeyG),len(KeyG))
+        #KeyG=b64decode(KeyG) # string -> bytes
+        logger.debug("KeyG: {}, type:{},size:{}".format(KeyG,type(KeyG),len(KeyG)))
+        logger.debug("SGX_ENABLE:{}".format(SGX_ENABLE)) 
+        try:
+            if SGX_ENABLE==True :
+                KeyW_bytes = b64decode(bundle.obj.KeyW) # base64 -> bytes
+                sealed_key=b64decode(KeyG) # string -> bytes
+                q = EnclaveId.objects.first() # get existed enclave id
         
-        q = EnclaveId.objects.first() # get existed enclave id
-        # invoke API of TA
-        enclaveId = q.encId
+                # invoke API of TA
+                enclaveId = q.encId
 
         # encryption - for testing only
         #message = b'hello'
@@ -200,7 +204,7 @@ class SearchResource(Resource):
         
         #key=bytes.fromhex(b'd8ccaa753e2983f03657ab3c8a68a85a'.decode("utf-8"))
         
-        key=b64decode(b'2MyqdT4pg/A2V6s8imioWg==')
+        #key=b64decode(b'2MyqdT4pg/A2V6s8imioWg==')
         #logger.debug("Encrypt data in enclave %d, plaintext:%s",enclaveId,message)
         #ct,size_ct = simple.encrypt_w_sealkey(enclaveId,True,KeyG,message,URL_TEEP);
         #ct,size_ct = simple.encrypt(enclaveId,True,key,message,URL_TEEP);
@@ -210,18 +214,72 @@ class SearchResource(Resource):
         #unseal_key = simple.unsealkey(enclaveId,KeyG,URL_TEEP);
         #logger.debug("unseal key:%s",unseal_key);
         
-        # decryption
-        sealed_key = KeyG
+                # decryption
+                #sealed_key = KeyG
         #sealed_key=b'Gk\xb5\xe7RP}\x93\x8dsv\xb7\x11\xf7\xbd\xd5\xc9\xc0\x99\xd9s\x0e\x90\xba[^\xafR/;:\x19<4`N\x9b\x1f\x05?\x94g\xbd8\xa5\xfe\xde\xbd\xfc\xfe\xfa\xe1\xd6\xe3\xd8\xc4U\xc9\xb1\xfc\xac<|\xf8'
-        logger.debug("sealed_key: %s, type:{},size:{}",sealed_key,type(sealed_key),len(sealed_key))
-        pt,size_pt=simple.encrypt_w_sealkey(enclaveId,False,sealed_key,KeyW,URL_TEEP)
+                logger.debug("sealed_key: %s, type:{},size:{}",sealed_key,type(sealed_key),len(sealed_key))
+                plaintext,size_pt=simple.encrypt_w_sealkey(enclaveId,False,sealed_key,KeyW,URL_TEEP)
         #pt,size_pt=simple.encrypt(enclaveId,False,key,KeyW,URL_TEEP)
-        logger.debug("plaintext:%s,size:%d",pt,size_pt)
+                logger.debug("plaintext:%s,size:%d",plaintext,size_pt)
+            else: # SGX is not enabled
+                logger.debug("decrypting without sgx")
+                logger.debug("KeyW:{},KeyG:{}".format(KeyW,KeyG))
+                plaintext = SJCL().decrypt(KeyW, KeyG)
+                logger.debug("plaintext:%s",plaintext)
+        except: # cannot decrypt
+            logger.debug("wrong token")
+            bundle.obj.Lta = ''
+            bundle.obj.KeyW = 'error' # hide KeyW in the response
+            return bundle
+
+        hashChars = int(hash_length/4) # hash_length/4 = number of characters in hash value = 64
+
+        plaintext_str = str(plaintext,'utf-8') # convert type from byte (plaintext) to string (plaintext_str)
+        hashW = plaintext_str[0:hashChars]
+        logger.debug("hashW: %s",hashW)
+        try:
+            searchNo = SearchNo.objects.get(w=hashW,keyId=keyid).searchno # check
+        except: # if searchno does not exist
+            searchNo = 0
+
+        # increase search number
+        searchNo = str(searchNo + 1)
+        logger.debug("hashW: %s, searchNo: %s", hashW, searchNo)
+
+        if SGX_ENABLE==True:
+            newKeyW_ciphertext,size_ct = simple.encrypt_w_sealkey(enclaveId,True,KeyG,hashW+searchNo,URL_TEEP);
+            logger.debug("newKeyW_ciphertext: %s", newKeyW_ciphertext)
+        else:
+            plaintext_byte =  str.encode(hashW + searchNo) # string -> bytes
+            logger.debug("new plaintext: %s", plaintext_byte)
         
-        bundle.obj.Lta = ''
-        bundle.obj.KeyW = pt # hide KeyW in the response
-        bundle.obj.keyId = ''
-        return bundle # return the list of computed addresses to CSP, which sends the request
+            newKeyW = SJCL().encrypt(plaintext_byte,KeyG,SALT,IV,MODE,ITER,int(KS/8)) # Compute new KeyW    
+            logger.debug("new ciphertext: {}".format(newKeyW))
+
+            newKeyW_ciphertext = newKeyW['ct'] # convert type from dict (newKeyW) to byte (newKeyW_byte)
+            logger.debug("newKeyW_ciphertext: %s", newKeyW_ciphertext)
+
+        logger.debug("Retrieve fileno")
+        Lta = []
+        try:
+            fileno = FileNo.objects.get(w=hashW,keyId=keyid).fileno
+            logger.debug("fileno from the internal request: %s",fileno)
+            # Compute all addresses with the new key
+            for i in range(1,int(fileno)+1): # file number is counted from 1
+                logger.debug("i: %s",i)
+                logger.debug("newKeyW_ciphertext: %s",str(newKeyW_ciphertext,'utf-8'))
+                input = (str(newKeyW_ciphertext,'utf-8') + str(i) + "0").encode('utf-8')
+                addr = hash(input)
+                logger.debug("hash input: %s",input)
+                logger.debug("hash output (computed from newKeyW): %s", addr)
+                Lta.append(addr)
+        except: # not found
+            logger.debug("Not found fileno")
+        finally:
+            bundle.obj.Lta = Lta
+            bundle.obj.KeyW = '' # hide KeyW in the response
+            bundle.obj.keyId = ''
+            return bundle # return the list of computed addresses to CSP, which sends the request
 #===============================================================================
 # "Long line request" object
 #===============================================================================  
@@ -295,8 +353,8 @@ class LongLineReqResource(Resource):
          
         requestType = bundle.obj.requestType
         Lw = bundle.obj.Lw
-        logger.debug("Type of request:",requestType)
-        logger.debug("Request content:",Lw)
+        logger.debug("Type of request:{}".format(requestType))
+        logger.debug("Request content:{}".format(Lw))
         
         keyid = bundle.obj.keyId
          
