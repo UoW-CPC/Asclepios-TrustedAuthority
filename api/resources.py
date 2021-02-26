@@ -37,7 +37,7 @@ NO_ATTRIBUTES = 400 # allow to get maximum of NO_ATTRIBUTES items at once
 update_lock = sem = threading.Semaphore()
 #URL_TEEP = "http://127.0.0.1:5683"
 URL_TEEP = os.environ['TEEP_SERVER']
-SGX_ENABLE=os.environ['SGX'] # True if sgx is enabled, False otherwise
+SGX_ENABLE = int(os.environ['SGX'])# True if sgx is enabled, False otherwise
 #===============================================================================
 # "File Number" resource
 #===============================================================================
@@ -186,57 +186,65 @@ class SearchResource(Resource):
         KeyG=Key.objects.get(keyId=keyid).key; # type of KeyG: string
         #KeyG=b64decode(KeyG) # string -> bytes
         logger.debug("KeyG: {}, type:{},size:{}".format(KeyG,type(KeyG),len(KeyG)))
-        logger.debug("SGX_ENABLE:{}".format(SGX_ENABLE)) 
-        try:
-            if SGX_ENABLE==True :
-                KeyW_bytes = b64decode(bundle.obj.KeyW) # base64 -> bytes
-                sealed_key=b64decode(KeyG) # string -> bytes
-                q = EnclaveId.objects.first() # get existed enclave id
-        
-                # invoke API of TA
-                enclaveId = q.encId
+        #logger.debug("SGX_ENABLE:{},type:{}".format(SGX_ENABLE,type(SGX_ENABLE))) 
+        hashChars = int(hash_length/4) # hash_length/4 = number of characters in hash value = 64
+       # try:
+        if SGX_ENABLE == 1 :
+            logger.debug("decrypting with sgx")
+            KeyW_ct = b64decode(KeyW['ct']) #b64decode(KeyW.ct) # base64 -> bytes
+            logger.debug("KeyW (ciphertext only):{}".format(KeyW_ct))
+            sealed_key=b64decode(KeyG) # string -> bytes
+            q = EnclaveId.objects.first() # get existed enclave id
+            # invoke API of TA
+            enclaveId = q.encId
 
-        # encryption - for testing only
-        #message = b'hello'
+                # encryption - for testing only
+                #message = b'hello'
         
-        #hex_string = "d8 cc aa 75 3e 29 83 f0 36 57 ab 3c 8a 68 a8 5a"
-        #key=bytes.fromhex(hex_string)
+                #hex_string = "d8 cc aa 75 3e 29 83 f0 36 57 ab 3c 8a 68 a8 5a"
+                #key=bytes.fromhex(hex_string)
         
-        #key=bytes.fromhex(b'd8ccaa753e2983f03657ab3c8a68a85a'.decode("utf-8"))
+                #key=bytes.fromhex(b'd8ccaa753e2983f03657ab3c8a68a85a'.decode("utf-8"))
         
-        #key=b64decode(b'2MyqdT4pg/A2V6s8imioWg==')
-        #logger.debug("Encrypt data in enclave %d, plaintext:%s",enclaveId,message)
-        #ct,size_ct = simple.encrypt_w_sealkey(enclaveId,True,KeyG,message,URL_TEEP);
-        #ct,size_ct = simple.encrypt(enclaveId,True,key,message,URL_TEEP);
-        #logger.debug("ciphertext 1:%s,size:%d,ciphertext 2:%s",ct,size_ct,KeyW);
+                #key=b64decode(b'2MyqdT4pg/A2V6s8imioWg==')
+                #logger.debug("Encrypt data in enclave %d, plaintext:%s",enclaveId,message)
+                #ct,size_ct = simple.encrypt_w_sealkey(enclaveId,True,KeyG,message,URL_TEEP);
+                #ct,size_ct = simple.encrypt(enclaveId,True,key,message,URL_TEEP);
+                #logger.debug("ciphertext 1:%s,size:%d,ciphertext 2:%s",ct,size_ct,KeyW);
         
-        # unseal key - for testing only
-        #unseal_key = simple.unsealkey(enclaveId,KeyG,URL_TEEP);
-        #logger.debug("unseal key:%s",unseal_key);
+                # unseal key - for testing only
+                #unseal_key = simple.unsealkey(enclaveId,KeyG,URL_TEEP);
+                #logger.debug("unseal key:%s",unseal_key);
         
                 # decryption
                 #sealed_key = KeyG
-        #sealed_key=b'Gk\xb5\xe7RP}\x93\x8dsv\xb7\x11\xf7\xbd\xd5\xc9\xc0\x99\xd9s\x0e\x90\xba[^\xafR/;:\x19<4`N\x9b\x1f\x05?\x94g\xbd8\xa5\xfe\xde\xbd\xfc\xfe\xfa\xe1\xd6\xe3\xd8\xc4U\xc9\xb1\xfc\xac<|\xf8'
-                logger.debug("sealed_key: %s, type:{},size:{}",sealed_key,type(sealed_key),len(sealed_key))
-                plaintext,size_pt=simple.encrypt_w_sealkey(enclaveId,False,sealed_key,KeyW,URL_TEEP)
-        #pt,size_pt=simple.encrypt(enclaveId,False,key,KeyW,URL_TEEP)
-                logger.debug("plaintext:%s,size:%d",plaintext,size_pt)
-            else: # SGX is not enabled
-                logger.debug("decrypting without sgx")
-                logger.debug("KeyW:{},KeyG:{},type of KeyG:{}".format(KeyW,KeyG,type(KeyG)))
-                #plaintext = SJCL().decrypt(KeyW, KeyG) # decrypt using passphrase (key is generated from passphrase)
-                plaintext = SJCL().decrypt(KeyW, KeyG, True) # decrypt using key
-                logger.debug("plaintext:%s",plaintext)
-        except: # cannot decrypt
-            logger.debug("wrong token")
-            bundle.obj.Lta = ''
-            bundle.obj.KeyW = 'error' # hide KeyW in the response
-            return bundle
+                #sealed_key=b'Gk\xb5\xe7RP}\x93\x8dsv\xb7\x11\xf7\xbd\xd5\xc9\xc0\x99\xd9s\x0e\x90\xba[^\xafR/;:\x19<4`N\x9b\x1f\x05?\x94g\xbd8\xa5\xfe\xde\xbd\xfc\xfe\xfa\xe1\xd6\xe3\xd8\xc4U\xc9\xb1\xfc\xac<|\xf8'
+            logger.debug("sealed_key value: %s, type:{},size:{}".format(sealed_key,type(sealed_key),len(sealed_key)))
+            plaintext,size_pt=simple.encrypt_w_sealkey(enclaveId,False,sealed_key,KeyW_ct,URL_TEEP)
+            logger.debug("plaintext (decrypted with sgx):%s",plaintext)
+            hashW = str(plaintext[0:hashChars],'utf-8') # convert from bytes to string, for example: from b'abc' to 'abc'
+            #pt,size_pt=simple.encrypt(enclaveId,False,key,KeyW,URL_TEEP)                logger.debug("plaintext:%s,size:%d",plaintext,size_pt)
+       #     hashChars = int(hash_length/4) # hash_length/4 = number of characters in hash value = 64
+        #    plaintext_str = plaintext #str(plaintext,'utf-8') # convert type from byte (plaintext) to string (plaintext_str)
+        else: # SGX is not enabled
+            logger.debug("decrypting without sgx")
+            logger.debug("KeyW:{},KeyG:{},type of KeyG:{}".format(KeyW,KeyG,type(KeyG)))
+            #plaintext = SJCL().decrypt(KeyW, KeyG) # decrypt using passphrase (key is generated from passphrase)
+            plaintext = SJCL().decrypt(KeyW, KeyG, True) # decrypt using key
+            logger.debug("plaintext:%s",plaintext)
 
-        hashChars = int(hash_length/4) # hash_length/4 = number of characters in hash value = 64
-
-        plaintext_str = str(plaintext,'utf-8') # convert type from byte (plaintext) to string (plaintext_str)
-        hashW = plaintext_str[0:hashChars]
+            plaintext_str = str(plaintext,'utf-8') # convert type from byte (plaintext) to string (plaintext_str)
+            hashW = plaintext_str[0:hashChars]
+    #    except: # cannot decrypt
+    #        logger.debug("wrong token")
+    #        bundle.obj.Lta = ''
+    #        bundle.obj.KeyW = 'error' # hide KeyW in the response
+    #        return bundle
+        
+        #hashChars = int(hash_length/4) # hash_length/4 = number of characters in hash value = 64
+        #plaintext_str = str(plaintext,'utf-8') # convert type from byte (plaintext) to string (plaintext_str)
+        
+        #hashW = plaintext_str[0:hashChars]
         logger.debug("hashW: %s",hashW)
         try:
             searchNo = SearchNo.objects.get(w=hashW,keyId=keyid).searchno # check
@@ -247,9 +255,19 @@ class SearchResource(Resource):
         searchNo = str(searchNo + 1)
         logger.debug("hashW: %s, searchNo: %s", hashW, searchNo)
 
-        if SGX_ENABLE==True:
-            newKeyW_ciphertext,size_ct = simple.encrypt_w_sealkey(enclaveId,True,KeyG,hashW+searchNo,URL_TEEP);
-            logger.debug("newKeyW_ciphertext: %s", newKeyW_ciphertext)
+        if SGX_ENABLE == 1 :
+            pt = (hashW+searchNo).encode()
+            logger.debug("plaintext:{}".format(pt))
+            newKeyW_ciphertext,size_ct = simple.encrypt_w_sealkey(enclaveId,True,b64decode(KeyG),pt,URL_TEEP);# plaintext example: b"hello", ciphertext example: b'\x93,If\x92\xaez\xe2'
+            newKeyW_ciphertext = b64encode(newKeyW_ciphertext) # convert to base64 string, for example "kyxJZpKu"
+            logger.debug("newKeyW_ciphertext:{}".format(newKeyW_ciphertext))
+
+            # test only
+            #unseal_key = simple.unsealkey(enclaveId,b64decode(KeyG),URL_TEEP);
+            #logger.debug("unseal key:%s",unseal_key);
+            #key=bytes.fromhex("3add4e67b725130a05823ad533862e7b")
+            #ct,size_ct = simple.encrypt(enclaveId,True,key,pt,URL_TEEP)
+            #logger.debug("plaintext:{},ciphertext (encrypt with plain key):{}".format(pt,ct));
         else:
             plaintext_byte =  str.encode(hashW + searchNo) # string -> bytes
             logger.debug("new plaintext: %s", plaintext_byte)
