@@ -131,7 +131,7 @@ void initialize_encryptor_sealkey(unsigned char*sealed_key,size_t size)//,unsign
     TRACE_ENCLAVE("Initialize encryptor with sealed key");
     
     //Unseal key
-    // allocate memory (3)
+    // allocate memory (2)
     unsigned char* output_data = (unsigned char*)oe_host_malloc(size);
     //memset(output_data,0,size);
     size_t out_data_len;
@@ -148,7 +148,7 @@ void initialize_encryptor_sealkey(unsigned char*sealed_key,size_t size)//,unsign
     }
 
     dispatcher.get_encryptor()->initialize((unsigned char*)output_data1); // AES-CCM
-    // free memory allocation (3)
+    // free the allocated memory (2)
     if(output_data!=NULL)
 	oe_host_free((void*)output_data);
 }
