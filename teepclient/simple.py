@@ -19,64 +19,13 @@ import os
 # Get an instance of a logger
 logger = logging.getLogger(__name__)
 
+# The application image to be installed into SGX enclave
 APP_IMAGE = os.getcwd() + '/teepclient/enclave_a/enclave_a.signed'
 #APP_IMAGE = os.getcwd() + '/enclave_a/enclave_a.signed'
 
 def catcher(f):
     try: return f()
     except: return None
-
-"""
-### Server
-
-class myresource(aiocoap.resource.Resource):
-    cnt = 0
-    enclaves = []
-    async def render_put(self, request):
-        input = cbor.loads(request.payload)
-        output = cbor.dumps({'error':1})
-        if 'install' in input:
-            e_binary = input['install']
-            s = SHA256.new(); s.update(e_binary); h = s.digest()
-            e = create_enclave(e_binary)
-            id = len(self.enclaves)
-            self.enclaves.append((s,e))
-            if e != None:
-                r = get_remote_report_with_pubkey(e)
-                if r != None:
-                    output = cbor.dumps({'key':r[0], 'report': r[1], 'id':id, 'sha':h})
-
-        elif 'seal' in input:
-            (s, e) = self.enclaves[input['id']]
-            sd = seal_bytes(e, input['seal'])
-            output = cbor.dumps({'sealed': sd})
-
-        elif 'unseal' in input:
-            (s, e) = self.enclaves[input['id']]
-            d = unseal_bytes(e, input['unseal'])
-            print(d)
-            output = cbor.dumps({'data': d})
-        
-        elif 'encrypt' in input:
-            (s, e) = self.enclaves[input['id']]
-           # print("simple.py - enclave:",e)
-           # print("simple.py - encrypt:",input['encrypt'])
-           # print("simple.py - key:",input['key'])
-           # print("simple.py - message:",input['message'])
-            (output,size) = encrypt(e,input['encrypt'],input['key'],input['message'])
-            output = cbor.dumps({'message': output,'size':size})
-
-        return aiocoap.Message(code=aiocoap.CONTENT, payload=output)
-
-def start_server(ip='::', port=5683):
-    root = aiocoap.resource.Site()
-    root.add_resource(['teep'], myresource())
-    e = asyncio.get_event_loop()
-    ctx = aiocoap.Context.create_server_context(root, bind=(ip, port))
-    e = asyncio.get_event_loop()
-    e.create_task(ctx)
-    e.run_forever()
-"""
 
 ### Client
 
@@ -102,6 +51,7 @@ def install(uri, filename):
 def trim0(b):
     return b[:b.find(b'\0')]
 
+""" for testing
 def sealingtest(uri='coap://127.0.0.1:5683/teep'):
     # Ask the remote TEEP agent to create a new instance.
     # It returns a pubkey and report from that instance
@@ -131,9 +81,29 @@ def sealingtest(uri='coap://127.0.0.1:5683/teep'):
     ret = ask(uri, {'encrypt':False, 'id':ans['id'],'message':ret['message'],'key':key})
     print("in simple.py - plaintext:",ret['message']);
     print("in simple.py - size of plaintext:",ret['size']);
+"""
+
+def existenclave(enclaveid, uri='coap://127.0.0.1:5683/teep'):
+    oeid = int(enclaveid)
+    ret = ask(uri, {'id_exist':oeid})['exist']
+    print("Check if enclave exists:",ret)
+    return ret
 
 def initenclave(uri='coap://127.0.0.1:5683/teep'):
-    print("initiate enclave")
+    """ Initialize a SGX enclave and install the application image defined by APP_IMAGE into the enclave
+    
+    Parameters
+    ----------
+    uri : URL string
+        The URI of the teep-deployer server
+    
+    Returns
+    ---------
+    ans : Dictionary object
+        The information of the initialized enclave. Example: {'key':public_key, 'report': attestation_report, 'id':0, 'sha':hash_value} 
+    """
+
+    logger.debug("initiate enclave")
     ans = install(uri, APP_IMAGE)
     return ans;
 
@@ -154,9 +124,24 @@ def getpubkey(enclave):#,uri='coap://127.0.0.1:5683/teep'):
 
     return pk,enclave['report'],enclave['id'],enclave['sha']
 
-
-# RSA PKCS1_v1_5
 def sealkey(enclave_id,encrypted_key,uri='coap://127.0.0.1:5683/teep'):
+    """ Sealing data using a SGX enclave
+
+    Parameters
+    ----------
+    enclave_id : number
+        The identification of the enclave. This is its index in the array eenclaves defined at teep-deployer server.
+    encrypted_key : string
+        The data which has been encrypted with the enclave's public key using RSA PKCS1_v1_5.
+    uri : URL
+        The URL of the teep-deployer server.
+    
+    Returns
+    ---------
+    sealed_pk : string
+        The sealed data.
+    """
+
     logger.debug("enclave_id:%s,encrypted key:%s",enclave_id,encrypted_key)
     oeid = int(enclave_id)
     #sealed_pk = ask(uri, {'id':oeid, 'seal':b64decode(encrypted_key)})['sealed']
@@ -164,21 +149,69 @@ def sealkey(enclave_id,encrypted_key,uri='coap://127.0.0.1:5683/teep'):
     #logger.debug("unsealed data:%s",ask(uri, {'unseal':sealed_pk, 'id':oeid})['data']) #test only
     return sealed_pk
 
+"""
 # test only
 def unsealkey(enclave_id,sealed_key,uri='coap://127.0.0.1:5683/teep'):
     logger.debug("enclave_id:%s, sealed key:%s",enclave_id,sealed_key)
     oeid = int(enclave_id)
     key = ask(uri, {'id':oeid, 'unseal':sealed_key})['data']
     return key
+"""
 
-# encrypt/decrypt 1 data block using the sealed key
 def encrypt_w_sealkey(enclave_id,encrypt,sealed_key,message,uri='coap://127.0.0.1:5683/teep'):
+    """ Encrypt/ decrypt data using a sealed key.
+    The sealed key is first unsealed inside a SGX enclave, then the unsealed key is used for encryption/ decryption.
+
+    Parameters
+    ----------
+    enclave_id : number
+        The identification of the enclave. This is its index in the array eenclaves defined at teep-deployer server.
+    encrypt : boolean
+        True if encrypting, False if decrypting
+    sealed_key : string
+        The sealed key
+    message : string
+        The input data. It is plaintext if encrypt=True, ciphertext if encrypt=False
+    uri : URL
+        The URL of the teep-deployer server
+    
+    Returns
+    ---------
+    ret['message'] : string
+        The output data. It is the ciphertext if encrypt=True, the plaintext if encrypt=False
+    ret['size'] : number
+        The size of the output data
+    """
+    logger.debug("encrypt/ decrypt with sealed key")
     ret = ask(uri, {'enc_with_sealkey':encrypt, 'id':int(enclave_id),'message':message,'sealed_key':sealed_key})
     logger.debug("sealed key:%s,input:%s,input size:%d,output:%s,size:%d",sealed_key,message,len(message),ret['message'],ret['size'])
     return ret['message'],ret['size']
 
-# encrypt/decrypt 1 data block
 def encrypt(enclave_id,encrypt,key,message,uri='coap://127.0.0.1:5683/teep'):
+    """ Encrypt/ decrypt data
+    This function is only for testing, and should not be used in order to avoid transmitting the encryption/ encryption key in plaintext.
+
+    Parameters
+    ----------
+    enclave_id : number
+        The identification of the enclave. This is its index in the array eenclaves defined at teep-deployer server.
+    encrypt : boolean
+        True if encrypting, False if decrypting
+    key : string
+        The key
+    message : string
+        The input data. It is plaintext if encrypt=True, ciphertext if encrypt=False
+    uri : URL
+        The URL of the teep-deployer server
+    
+    Returns
+    ---------
+    ret['message'] : string
+        The output data. It is the ciphertext if encrypt=True, the plaintext if encrypt=False
+    ret['size'] : number
+        The size of the output data
+    """
+
     ret = ask(uri, {'encrypt':encrypt, 'id':enclave_id,'message':message,'key':key})
     logger.debug("output:%s,size:%d",ret['message'],ret['size'])
     return ret['message'],ret['size']
