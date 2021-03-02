@@ -198,6 +198,13 @@ class SearchResource(Resource):
             # invoke API of TA
             enclaveId = q.encId
 
+           # if (simple.existenclave(enclaveId,URL_TEEP)==0) : # if enclave does not exist
+            #    logger.debug("Enclave id:{}".format(enclaveId))
+             #   q.delete()
+              #  ENCLAVE=simple.initenclave(URL_TEEP)
+               # pk, report,enclaveId,h = simple.getpubkey(ENCLAVE)
+                #EnclaveId.objects.create(encId=enclaveId,pubkey=pk,report=report,sha=h)
+
                 # encryption - for testing only
                 #message = b'hello'
         
@@ -589,6 +596,11 @@ class PubKeyResource(Resource):
             pk = q.pubkey
             report = q.report
             enclave_id = q.encId
+            if (simple.existenclave(enclave_id,URL_TEEP)==0) : # if enclave does not exist
+                q.delete()
+                ENCLAVE=simple.initenclave(URL_TEEP)
+                pk, report,enclave_id,h = simple.getpubkey(ENCLAVE)
+                EnclaveId.objects.create(encId=enclave_id,pubkey=pk,report=report,sha=h)
 
         bundle_obj = PubKey()
         bundle_obj.pubkey = pk
