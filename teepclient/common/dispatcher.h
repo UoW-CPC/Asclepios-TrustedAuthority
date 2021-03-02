@@ -46,11 +46,9 @@ class ecall_dispatcher
     int rsa_test(
         uint8_t* data, 
         size_t data_len);
-     //void  retrieve_private_key(uint8_t&pem_private_key[512]);
     Crypto* get_crypto() { return m_crypto; }
     EncryptorCCM* get_encryptor() { return m_encryptor; }
     //Encryptor* get_encryptor() { return m_encryptor; }
-    //Attestation* get_attestation() { return m_attestation; }
   private:
     bool initialize(const char* name);
 };
