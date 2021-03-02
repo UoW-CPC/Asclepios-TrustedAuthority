@@ -102,7 +102,13 @@ void close_encryptor()
 }
 */
 
-// AES-CCM
+/**
+ * Initialize the AES-CCM encryptor with key. This function is for testing purpose. It should not be used to avoid transmitting key to SGX enclave in plaintext.
+ *
+ * @param key The encryption/ decryption. Example: { 0xD8,0xCC,0xAA,0x75 ,0x3E,0x29,0x83,0xF0 ,0x36,0x57,0xAB,0x3C ,0x8A,0x68,0xA8,0x5A};
+ * @param size Size of the key.
+ * @return void The key is set to the encryptor.
+ */
 void initialize_encryptor(unsigned char*key,size_t size)//,unsigned char** output_buf)
 {
     TRACE_ENCLAVE("Initialize encryptor");
@@ -112,10 +118,20 @@ void initialize_encryptor(unsigned char*key,size_t size)//,unsigned char** outpu
     dispatcher.get_encryptor()->initialize(key);
 }
 
+/**
+ * Initialize the AES-CCM encryptor with a sealed key.
+ * The sealed key is unsealed, and used to configure the encryptor.
+ *
+ * @param sealed_key The key which has been sealed with the SGX enclave's secrete key. Example format: b'\xa2\xd9)\x8c\x04\xd4\xf8\x18\x0ck\xa9\xab\x1b\xdey'
+ * @param size Size of the sealed key.
+ * @return void The unsealed key is set to the encryptor. Example of the unsealed key: { 0xD8,0xCC,0xAA,0x75 ,0x3E,0x29,0x83,0xF0 ,0x36,0x57,0xAB,0x3C ,0x8A,0x68,0xA8,0x5A};
+ */
 void initialize_encryptor_sealkey(unsigned char*sealed_key,size_t size)//,unsigned char** output_buf)
 {
     TRACE_ENCLAVE("Initialize encryptor with sealed key");
-    //unseal key
+    
+    //Unseal key
+    // allocate memory (3)
     unsigned char* output_data = (unsigned char*)oe_host_malloc(size);
     //memset(output_data,0,size);
     size_t out_data_len;
@@ -132,9 +148,21 @@ void initialize_encryptor_sealkey(unsigned char*sealed_key,size_t size)//,unsign
     }
 
     dispatcher.get_encryptor()->initialize((unsigned char*)output_data1); // AES-CCM
-    oe_host_free((void*)output_data);
+    // free memory allocation (3)
+    if(output_data!=NULL)
+	oe_host_free((void*)output_data);
 }
 
+/**
+ * Encrypt/ Decrypt data using AES-CCM.
+ *
+ * @param encrypt true if encrypting data, false if decrypting data
+ * @param input_buf Plaintext if encrypt=true, ciphertext if encrypt=false
+ * @param[out] output_buf Ciphertext if encrypt=true, plaintext if encrypt=false
+ * @param size Size of the input data
+ * @param[out] out_data_len Length of output
+ * @return void 
+ */
 void encrypt_block(
     bool encrypt,
     unsigned char* input_buf,
