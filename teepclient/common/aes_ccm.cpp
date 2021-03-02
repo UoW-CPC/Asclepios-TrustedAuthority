@@ -67,8 +67,6 @@ int EncryptorCCM::encrypt_block(
                      (const unsigned char*)input_buf, ciphertext,
                      ciphertext+size, TAG_LEN );
 	*/
-	// allocated memory (1)
-	//output_data = (unsigned char*)oe_host_malloc(ENCRYPTION_KEY_SIZE_IN_BYTES+TAG_LEN);
     	ret = mbedtls_ccm_encrypt_and_tag(&m_aescontext, size, 
 			m_operating_iv, AES_IV_SIZE,
                         NULL, 0, 
@@ -91,7 +89,7 @@ int EncryptorCCM::encrypt_block(
 	}
     } else { //decryption
 	size_t msg_len = size - TAG_LEN; //the ciphertext string contains ciphertext content plus tag. Therefore, the length of ciphertext is equal to the size of the string subtracted TAG_LEN 
-	// allocated memory (2) : output_data is allocated inside the decryption function
+	
 	ret = mbedtls_ccm_auth_decrypt( &m_aescontext, msg_len,
                                 m_operating_iv, AES_IV_SIZE, 
 				NULL, 0,
@@ -114,6 +112,6 @@ void EncryptorCCM::close()
     // free aes context
     mbedtls_ccm_free(&m_aescontext);
 
-    //not implemented: free memory allocated (1,2)
+    //free memory allocated (1) at teep-server source code (lib.py)
     TRACE_ENCLAVE("encryptor::close");
 }
