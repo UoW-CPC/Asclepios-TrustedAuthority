@@ -3,7 +3,7 @@ from api.models import FileNo,SearchNo,Key,EnclaveId
 from tastypie.authorization import Authorization
 from tastypie.constants import ALL, ALL_WITH_RELATIONS
 from tastypie.bundle import Bundle 
-from parameters import SALT, IV, hash_length, MODE, ITER, KS # KeyG
+from parameters import IV, hash_length, MODE, KS # KeyG, SALT, ITER
 from django.db.models import Q
 #from django.db import transaction # test
 #from django.shortcuts import get_object_or_404 #test
@@ -280,7 +280,8 @@ class SearchResource(Resource):
             logger.debug("new plaintext: %s", plaintext_byte)
         
             #newKeyW = SJCL().encrypt(plaintext_byte,KeyG,SALT,IV,MODE,ITER,int(KS/8)) # Compute new KeyW using passphrase (key is generated from passphrase)
-            newKeyW = SJCL().encrypt(plaintext_byte,KeyG,SALT,IV,MODE,ITER,int(KS/8),True) # Compute new KeyW using key
+            #newKeyW = SJCL().encrypt(plaintext_byte,KeyG,SALT,IV,MODE,ITER,int(KS/8),True) # Compute new KeyW using key
+            newKeyW = SJCL().encrypt(plaintext_byte,KeyG,"",IV,MODE,10000,int(KS/8),True) # Compute new KeyW using key. The salt value ("") and iteration number (10000) will not be used.
             logger.debug("new ciphertext: {}".format(newKeyW))
 
             newKeyW_ciphertext = newKeyW['ct'] # convert type from dict (newKeyW) to byte (newKeyW_byte)
