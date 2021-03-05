@@ -7,7 +7,7 @@
 
 EncryptorCCM::EncryptorCCM()
 {
-    unsigned char iv[AES_IV_SIZE] ={0x9F,0x62,0x54,0x4C,0x9D,0x3F,0xCA,0xB2};
+    unsigned char iv[AES_IV_SIZE] ={0x61,0x7a,0x79,0x6d,0x62,0x6c,0x71,0x65};
     memcpy(m_original_iv, iv, AES_IV_SIZE);
 }
 
@@ -47,25 +47,24 @@ int EncryptorCCM::encrypt_block(
     unsigned char output[ENCRYPTION_KEY_SIZE] = {0};
     // allocated memory (1)
     unsigned char* output_data = (unsigned char*)oe_host_malloc(ENCRYPTION_KEY_SIZE_IN_BYTES+TAG_LEN);
-    //unsigned char* output_data;
     int ret = 0;
 
     if(encrypt==MBEDTLS_AES_ENCRYPT){
-	/*
-	unsigned char iv[]={0x9F,0x62,0x54,0x4C,0x9D,0x3F,0xCA,0xB2};
+	/* for testing
     	const char*msg="hello";
     	size_t msg_len = 5;
     	unsigned char key[] = { 0xD8,0xCC,0xAA,0x75 ,0x3E,0x29,0x83,0xF0 ,0x36,0x57,0xAB,0x3C ,0x8A,0x68,0xA8,0x5A};
-
-    	mbedtls_ccm_context ctx;
-    	mbedtls_ccm_init( &ctx );
-    	mbedtls_ccm_setkey( &ctx, MBEDTLS_CIPHER_ID_AES, key, 8 * sizeof key );
 
     	unsigned char ciphertext[ENCRYPTION_KEY_SIZE+TAG_LEN];
 	ret = mbedtls_ccm_encrypt_and_tag( &m_aescontext, size,
                      m_operating_iv, AES_IV_SIZE,NULL, 0,
                      (const unsigned char*)input_buf, ciphertext,
                      ciphertext+size, TAG_LEN );
+        ret = mbedtls_ccm_auth_decrypt( &m_aescontext, size,
+                                m_operating_iv, AES_IV_SIZE,
+                                NULL, 0,
+                                (const unsigned char*)ciphertext, output_data,
+                                ciphertext + size, TAG_LEN );
 	*/
     	ret = mbedtls_ccm_encrypt_and_tag(&m_aescontext, size, 
 			m_operating_iv, AES_IV_SIZE,
@@ -73,13 +72,8 @@ int EncryptorCCM::encrypt_block(
 			(const unsigned char*)input_buf, output_data, 
 			output_data + size,TAG_LEN);
 	
-	 memcpy(m_operating_iv, m_original_iv, AES_IV_SIZE);
-	 /*ret = mbedtls_ccm_auth_decrypt( &m_aescontext, size,
-                                m_operating_iv, AES_IV_SIZE,
-                                NULL, 0,
-                                (const unsigned char*)ciphertext, output_data,
-                                ciphertext + size, TAG_LEN );
-	memcpy(m_operating_iv, m_original_iv, AES_IV_SIZE);*/
+	memcpy(m_operating_iv, m_original_iv, AES_IV_SIZE);
+	
 	if (ret != 0)
         {
                 TRACE_ENCLAVE("mbedtls_ccm_encrypt_and_tag failed with %d", ret);
