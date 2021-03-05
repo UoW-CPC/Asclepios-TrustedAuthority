@@ -12,7 +12,7 @@
 
 using namespace std;
 
-#define AES_IV_SIZE 8 // 8 bytes
+#define AES_IV_SIZE 8 // bytes
 #define HASH_VALUE_SIZE_IN_BYTES 32
 #define ENCRYPTION_KEY_SIZE 128
 #define ENCRYPTION_KEY_SIZE_IN_BYTES (ENCRYPTION_KEY_SIZE / 8)
