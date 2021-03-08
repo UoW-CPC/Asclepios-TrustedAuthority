@@ -11,8 +11,6 @@ import Crypto.Cipher.PKCS1_v1_5 as PKCS1_v1_5
 
 from base64 import b64encode,b64decode
 
-#from lib import *
-
 import json
 import logging
 import os
@@ -51,7 +49,7 @@ def install(uri, filename):
 def trim0(b):
     return b[:b.find(b'\0')]
 
-""" for testing
+""" This function is only for testing
 def sealingtest(uri='coap://127.0.0.1:5683/teep'):
     # Ask the remote TEEP agent to create a new instance.
     # It returns a pubkey and report from that instance
@@ -84,9 +82,21 @@ def sealingtest(uri='coap://127.0.0.1:5683/teep'):
 """
 
 def existenclave(enclaveid, uri='coap://127.0.0.1:5683/teep'):
+    """ Check if an enclave id exists or not
+    
+    Parameters
+    ----------
+    enclaveid: number
+        Enclave identification
+
+    Returns
+    -------
+    ret: 1 or 0
+        1 if the enclaveid exists, 0 otherwise
+    """
     oeid = int(enclaveid)
     ret = ask(uri, {'id_exist':oeid})['exist']
-    print("Check if enclave exists:",ret)
+    logger.debug("Check if enclave exists:",ret)
     return ret
 
 def initenclave(uri='coap://127.0.0.1:5683/teep'):
@@ -107,17 +117,19 @@ def initenclave(uri='coap://127.0.0.1:5683/teep'):
     ans = install(uri, APP_IMAGE)
     return ans;
 
-# Retrieve public key from SGX enclave
 def getpubkey(enclave):#,uri='coap://127.0.0.1:5683/teep'):
-    # Ask the remote TEEP agent to create a new instance.
-    # It returns a pubkey and report from that instance
-    #ans = install(uri, '/TA/teepclient/enclave_a/enclave_a.signed')
-    #logger.debug("getpubkey func - generated public key (PEM format):",ans['key'])
-    #pk=ans['key'].decode('utf-8')#trim0.decode.rstrip()
-    #logger.debug("getpubkey func - generated public key (utf-8 decoded):",pk)
+    """ Retrieve public key of SGX enclave
 
-    #return pk,ans['report'],ans['id']
+    Parameters
+    ----------
+    enclave: Json object
+        The information of the enclave including enclave id, public key, report, hash value
 
+    Returns
+    -------
+    pk,report,enclave_id,sha: 
+        Public key, enclave id, report, hash value
+    """
     logger.debug("getpubkey func - generated public key (PEM format):{0}".format(enclave['key']))
     pk=trim0(enclave['key']).decode('utf-8')#enclave['key'].decode('utf-8')#trim0.decode.rstrip()
     logger.debug("getpubkey func - generated public key (utf-8 decoded):{0}".format(pk))
@@ -150,7 +162,7 @@ def sealkey(enclave_id,encrypted_key,uri='coap://127.0.0.1:5683/teep'):
     return sealed_pk
 
 """
-# test only
+# This function is only for testing. It should not be used to avoid revealing key in plaintext to the host
 def unsealkey(enclave_id,sealed_key,uri='coap://127.0.0.1:5683/teep'):
     logger.debug("enclave_id:%s, sealed key:%s",enclave_id,sealed_key)
     oeid = int(enclave_id)
