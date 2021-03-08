@@ -385,21 +385,3 @@ bool Attestation::attest_remote_report(
 exit:
     return ret;
 }
-/*
-extern"C" void retrieve_private_key(uint8_t**pem_key,size_t* key_size){
-    uint8_t pem_private_key[512];
-    int ret = 1;
-    Crypto* crypto = get_dispatcher()->get_crypto();
-    crypto->retrieve_public_key(pem_private_key);
-    uint8_t* key_buf = NULL;
-    key_buf = (uint8_t*)oe_host_malloc(512);
-    if (key_buf == NULL)
-    {
-        ret = OE_OUT_OF_MEMORY;
-    }else{
-        memcpy(key_buf, pem_private_key, sizeof(pem_private_key));
-        *pem_key = key_buf;
-        *key_size = sizeof(pem_private_key);
-    }
-    
-}*/
