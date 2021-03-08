@@ -103,7 +103,8 @@ void close_encryptor()
 */
 
 /**
- * Initialize the AES-CCM encryptor with key. This function is for testing purpose. It should not be used to avoid transmitting key to SGX enclave in plaintext.
+ * Initialize the AES-CCM encryptor with key. 
+ * This function is for testing purpose. It should not be used to avoid transmitting key to SGX enclave in plaintext.
  *
  * @param key The encryption/ decryption. Example: { 0xD8,0xCC,0xAA,0x75 ,0x3E,0x29,0x83,0xF0 ,0x36,0x57,0xAB,0x3C ,0x8A,0x68,0xA8,0x5A};
  * @param size Size of the key.
@@ -132,7 +133,7 @@ void initialize_encryptor_sealkey(unsigned char*sealed_key,size_t size)//,unsign
     
     //Unseal key
     // allocate memory (2)
-    unsigned char* output_data = (unsigned char*)oe_host_malloc(size);
+    uint8_t* output_data = (uint8_t*)oe_host_malloc(size);
     memset(output_data,0,size);
     size_t out_data_len;
     unseal_bytes((uint8_t*)sealed_key,size,(uint8_t**)&output_data,&out_data_len);
@@ -147,10 +148,10 @@ void initialize_encryptor_sealkey(unsigned char*sealed_key,size_t size)//,unsign
         sscanf((const char*)output_data + 2*i, "%02x", (unsigned int *)&output_data1[i]);
     }
 
-    dispatcher.get_encryptor()->initialize((unsigned char*)output_data1); // AES-CCM
     // free the allocated memory (2)
-   // if(output_data!=NULL)
     oe_host_free((void*)output_data);
+
+    dispatcher.get_encryptor()->initialize((unsigned char*)output_data1); // AES-CCM
 }
 
 /**
