@@ -5,12 +5,22 @@
 #include <string.h>
 #include "log.h"
 
+/**
+ * Constructor.
+ * Set initialization vector (iv) value, which will be used for encryption/decryption
+ */
 EncryptorCCM::EncryptorCCM()
 {
     unsigned char iv[AES_IV_SIZE] ={0x61,0x7a,0x79,0x6d,0x62,0x6c,0x71,0x65};
     memcpy(m_original_iv, iv, AES_IV_SIZE);
 }
 
+/**
+ * Initialize the encryptor with the input key, and the defined iv value
+ *
+ * @param key Symmetric key
+ * @return ret 0 if success, !=0 otherwise
+ */
 int EncryptorCCM::initialize( unsigned char*key )
 {
     int ret = 0;
@@ -37,6 +47,16 @@ exit:
     return ret;
 }
 
+/**
+ * Encrypt data.
+ *
+ * @param encrypt true if encrypting data, false if decrypting data
+ * @param input_buf Plaintext if encrypt=true, ciphertext if encrypt=false
+ * @param[out] output_buf Ciphertext if encrypt=true, plaintext if encrypt=false
+ * @param size Size of the input data
+ * @param[out] out_data_len Length of output
+ * @return ret 0 if success, != otherwise
+ */
 int EncryptorCCM::encrypt_block(
     bool encrypt,
     unsigned char* input_buf,
@@ -98,9 +118,14 @@ int EncryptorCCM::encrypt_block(
 		*out_data_len = msg_len;
         }
     }
-    return 1;
+    return ret;
 }
 
+/**
+ * Close the encryptor, and free any allocated memory.
+ *
+ * @return void
+ */
 void EncryptorCCM::close()
 {
     // free aes context
