@@ -20,7 +20,6 @@ using namespace std;
 class EncryptorCCM
 {
   private:
-    //mbedtls_aes_context m_aescontext;
     mbedtls_ccm_context m_aescontext;
 
     // initialization vector
