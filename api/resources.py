@@ -1,16 +1,16 @@
 from tastypie.resources import ModelResource, Resource, fields
-from api.models import FileNo,SearchNo,Key
+from api.models import FileNo,SearchNo,Key,EnclaveId
 from tastypie.authorization import Authorization
 from tastypie.constants import ALL, ALL_WITH_RELATIONS
 from tastypie.bundle import Bundle 
-from parameters import SALT, IV, hash_length # KeyG
+from parameters import IV, hash_length, MODE, KS # KeyG, SALT, ITER
 from django.db.models import Q
 #from django.db import transaction # test
 #from django.shortcuts import get_object_or_404 #test
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from threading import Thread, Lock
-
+from teepclient import simple
 #from django.core import serializers
 #from django.http import HttpResponse
 
@@ -20,12 +20,13 @@ from threading import Thread, Lock
 import json
 import hashlib
 import requests
-
 import sys
 sys.path.append('sjcl-0.2.1/sjcl') #we modified python sjcl a bit to allow define iv, salt of encryption
 from sjcl import SJCL
 import logging
 
+import os
+from base64 import b64encode,b64decode
 #===============================================================================
 # Common functions, constants
 #===============================================================================  
@@ -34,7 +35,9 @@ import logging
 logger = logging.getLogger(__name__)
 NO_ATTRIBUTES = 400 # allow to get maximum of NO_ATTRIBUTES items at once
 update_lock = sem = threading.Semaphore()
-
+#URL_TEEP = "http://127.0.0.1:5683"
+URL_TEEP = os.environ['TEEP_SERVER']
+SGX_ENABLE = int(os.environ['SGX'])# True if sgx is enabled, False otherwise
 #===============================================================================
 # "File Number" resource
 #===============================================================================
@@ -43,7 +46,7 @@ class FileNoResource(ModelResource):
         queryset = FileNo.objects.all()
         resource_name = 'fileno'
         authorization = Authorization()
-        fields = ['w', 'fileno']
+        fields = ['w', 'fileno','keyId']
         filtering = {
             "w": ['exact','in'],
         }
@@ -71,7 +74,7 @@ class SearchNoResource(ModelResource):
         queryset = SearchNo.objects.all()
         resource_name = 'searchno'
         authorization = Authorization()
-        fields = ['w', 'searchno']
+        fields = ['w', 'searchno','keyId']
         filtering = {
             "w": ['exact','in'],
         }
@@ -104,6 +107,7 @@ def hash(input):
 #===============================================================================  
 class Search(object):
     KeyW = ''
+    keyId = ''
     
 #===============================================================================
 # "Search Query" resource
@@ -111,6 +115,7 @@ class Search(object):
 class SearchResource(Resource):
     KeyW = fields.CharField(attribute = 'KeyW')
     Lta = fields.ListField(attribute='Lta',default=[]) # List of addresses, computed by TA
+    keyId = fields.CharField(attribute = 'keyId')
     
     class Meta:
         resource_name = 'search'
@@ -168,55 +173,124 @@ class SearchResource(Resource):
         # POST-ed payload key/values to object attribute/values
         bundle = self.full_hydrate(bundle)
         
+        #KeyW = b64decode(bundle.obj.KeyW) # base64 -> bytes
         KeyW = bundle.obj.KeyW
         logger.debug("Type of ciphertext: %s",type(KeyW))
-        
+        logger.debug("keyW:%s",KeyW)
+        logger.debug("bundle object:%s",bundle)
         # Recover hash(w) and searchNo[w] from KeyW
         # Retrieve KeyG from database
-        KeyG = Key.objects.first().key;
-        #logger.debug("retrieved key:%s",key1);
-        logger.debug("key: %s",KeyG)
-        logger.debug("KeyW: %s",KeyW)
-        try:
-            plaintext = SJCL().decrypt(KeyW, KeyG)
-        except: # cannot decrypt
-            logger.debug("wrong token")
-            bundle.obj.Lta = ''
-            bundle.obj.KeyW = 'error' # hide KeyW in the response
-            return bundle
-            
-        logger.debug("plaintext: %s",plaintext)
-        
+        keyid = bundle.obj.keyId;
+        logger.debug("Id of key:%s",keyid);
+
+        KeyG=Key.objects.get(keyId=keyid).key; # type of KeyG: string
+        #KeyG=b64decode(KeyG) # string -> bytes
+        logger.debug("KeyG: {}, type:{},size:{}".format(KeyG,type(KeyG),len(KeyG)))
+        #logger.debug("SGX_ENABLE:{},type:{}".format(SGX_ENABLE,type(SGX_ENABLE))) 
         hashChars = int(hash_length/4) # hash_length/4 = number of characters in hash value = 64
+       # try:
+        if SGX_ENABLE == 1 :
+            logger.debug("decrypting with sgx")
+            KeyW_ct = b64decode(KeyW['ct']) #b64decode(KeyW.ct) # base64 -> bytes
+            logger.debug("KeyW (ciphertext only):{}".format(KeyW_ct))
+            sealed_key=b64decode(KeyG) # string -> bytes
+            q = EnclaveId.objects.first() # get existed enclave id
+            # invoke API of TA
+            enclaveId = q.encId
+
+           # if (simple.existenclave(enclaveId,URL_TEEP)==0) : # if enclave does not exist
+            #    logger.debug("Enclave id:{}".format(enclaveId))
+             #   q.delete()
+              #  ENCLAVE=simple.initenclave(URL_TEEP)
+               # pk, report,enclaveId,h = simple.getpubkey(ENCLAVE)
+                #EnclaveId.objects.create(encId=enclaveId,pubkey=pk,report=report,sha=h)
+
+                # encryption - for testing only
+                #message = b'hello'
         
-        plaintext_str = str(plaintext,'utf-8') # convert type from byte (plaintext) to string (plaintext_str)
-        hashW = plaintext_str[0:hashChars]
+                #hex_string = "d8 cc aa 75 3e 29 83 f0 36 57 ab 3c 8a 68 a8 5a"
+                #key=bytes.fromhex(hex_string)
+        
+                #key=bytes.fromhex(b'd8ccaa753e2983f03657ab3c8a68a85a'.decode("utf-8"))
+        
+                #key=b64decode(b'2MyqdT4pg/A2V6s8imioWg==')
+                #logger.debug("Encrypt data in enclave %d, plaintext:%s",enclaveId,message)
+                #ct,size_ct = simple.encrypt_w_sealkey(enclaveId,True,KeyG,message,URL_TEEP);
+                #ct,size_ct = simple.encrypt(enclaveId,True,key,message,URL_TEEP);
+                #logger.debug("ciphertext 1:%s,size:%d,ciphertext 2:%s",ct,size_ct,KeyW);
+        
+                # unseal key - for testing only
+                #unseal_key = simple.unsealkey(enclaveId,KeyG,URL_TEEP);
+                #logger.debug("unseal key:%s",unseal_key);
+        
+                # decryption
+                #sealed_key = KeyG
+                #sealed_key=b'Gk\xb5\xe7RP}\x93\x8dsv\xb7\x11\xf7\xbd\xd5\xc9\xc0\x99\xd9s\x0e\x90\xba[^\xafR/;:\x19<4`N\x9b\x1f\x05?\x94g\xbd8\xa5\xfe\xde\xbd\xfc\xfe\xfa\xe1\xd6\xe3\xd8\xc4U\xc9\xb1\xfc\xac<|\xf8'
+            logger.debug("sealed_key value: %s, type:{},size:{}".format(sealed_key,type(sealed_key),len(sealed_key)))
+            plaintext,size_pt=simple.encrypt_w_sealkey(enclaveId,False,sealed_key,KeyW_ct,URL_TEEP)
+            logger.debug("plaintext (decrypted with sgx):%s",plaintext)
+            hashW = str(plaintext[0:hashChars],'utf-8') # convert from bytes to string, for example: from b'abc' to 'abc'
+            #pt,size_pt=simple.encrypt(enclaveId,False,key,KeyW,URL_TEEP)                logger.debug("plaintext:%s,size:%d",plaintext,size_pt)
+       #     hashChars = int(hash_length/4) # hash_length/4 = number of characters in hash value = 64
+        #    plaintext_str = plaintext #str(plaintext,'utf-8') # convert type from byte (plaintext) to string (plaintext_str)
+        else: # SGX is not enabled
+            logger.debug("decrypting without sgx")
+            logger.debug("KeyW:{},KeyG:{},type of KeyG:{}".format(KeyW,KeyG,type(KeyG)))
+            #plaintext = SJCL().decrypt(KeyW, KeyG) # decrypt using passphrase (key is generated from passphrase)
+            plaintext = SJCL().decrypt(KeyW, KeyG, True) # decrypt using key
+            logger.debug("plaintext:%s",plaintext)
+
+            plaintext_str = str(plaintext,'utf-8') # convert type from byte (plaintext) to string (plaintext_str)
+            hashW = plaintext_str[0:hashChars]
+    #    except: # cannot decrypt
+    #        logger.debug("wrong token")
+    #        bundle.obj.Lta = ''
+    #        bundle.obj.KeyW = 'error' # hide KeyW in the response
+    #        return bundle
+        
+        #hashChars = int(hash_length/4) # hash_length/4 = number of characters in hash value = 64
+        #plaintext_str = str(plaintext,'utf-8') # convert type from byte (plaintext) to string (plaintext_str)
+        
+        #hashW = plaintext_str[0:hashChars]
         logger.debug("hashW: %s",hashW)
-        #logger.debug("search no: %s", plaintext_str[hashChars:])
-        #searchNo = plaintext_str[hashChars:] # NEED to correct: it should read locally instead of parsing
         try:
-            searchNo = SearchNo.objects.get(w=hashW).searchno # check
+            searchNo = SearchNo.objects.get(w=hashW,keyId=keyid).searchno # check
         except: # if searchno does not exist
             searchNo = 0
-        
+
         # increase search number
-        #searchNo = str(int(searchNo) + 1)
         searchNo = str(searchNo + 1)
-        
         logger.debug("hashW: %s, searchNo: %s", hashW, searchNo)
+
+        if SGX_ENABLE == 1 :
+            pt = (hashW+searchNo).encode()
+            logger.debug("plaintext:{}".format(pt))
+            newKeyW_ciphertext,size_ct = simple.encrypt_w_sealkey(enclaveId,True,b64decode(KeyG),pt,URL_TEEP);# plaintext example: b"hello", ciphertext example: b'\x93,If\x92\xaez\xe2'
+            newKeyW_ciphertext = b64encode(newKeyW_ciphertext) # convert to base64 string, for example "kyxJZpKu"
+            logger.debug("newKeyW_ciphertext:{}".format(newKeyW_ciphertext))
+
+            # test only
+            #unseal_key = simple.unsealkey(enclaveId,b64decode(KeyG),URL_TEEP);
+            #logger.debug("unseal key:%s",unseal_key);
+            #key=bytes.fromhex("3add4e67b725130a05823ad533862e7b")
+            #ct,size_ct = simple.encrypt(enclaveId,True,key,pt,URL_TEEP)
+            #logger.debug("plaintext:{},ciphertext (encrypt with plain key):{}".format(pt,ct));
+        else:
+            plaintext_byte =  str.encode(hashW + searchNo) # string -> bytes
+            logger.debug("new plaintext: %s", plaintext_byte)
         
-        plaintext_byte =  str.encode(hashW + searchNo)
-        logger.debug("new plaintext: %s", plaintext_byte)
-        newKeyW = SJCL().encrypt(plaintext_byte,KeyG,SALT,IV) # Compute new KeyW
-        logger.debug("new ciphertext: {}", newKeyW)
-        #logger.debug("decrypted value: %s", SJCL().decrypt(newKeyW, KeyG))
-        newKeyW_ciphertext = newKeyW['ct'] # convert type from dict (newKeyW) to byte (newKeyW_byte)
-        logger.debug("newKeyW_ciphertext: %s", newKeyW_ciphertext) 
-        
+            #newKeyW = SJCL().encrypt(plaintext_byte,KeyG,SALT,IV,MODE,ITER,int(KS/8)) # Compute new KeyW using passphrase (key is generated from passphrase)
+            #newKeyW = SJCL().encrypt(plaintext_byte,KeyG,SALT,IV,MODE,ITER,int(KS/8),True) # Compute new KeyW using key
+            newKeyW = SJCL().encrypt(plaintext_byte,KeyG,"",IV,MODE,10000,int(KS/8),True) # Compute new KeyW using key. The salt value ("") and iteration number (10000) will not be used.
+            logger.debug("new ciphertext: {}".format(newKeyW))
+
+            newKeyW_ciphertext = newKeyW['ct'] # convert type from dict (newKeyW) to byte (newKeyW_byte)
+            logger.debug("newKeyW_ciphertext: %s", newKeyW_ciphertext)
+
         logger.debug("Retrieve fileno")
         Lta = []
         try:
-            fileno = FileNo.objects.get(w=hashW).fileno
+            fileno = FileNo.objects.get(w=hashW,keyId=keyid).fileno
             logger.debug("fileno from the internal request: %s",fileno)
             # Compute all addresses with the new key
             for i in range(1,int(fileno)+1): # file number is counted from 1
@@ -232,21 +306,24 @@ class SearchResource(Resource):
         finally:
             bundle.obj.Lta = Lta
             bundle.obj.KeyW = '' # hide KeyW in the response
+            bundle.obj.keyId = ''
             return bundle # return the list of computed addresses to CSP, which sends the request
-
 #===============================================================================
 # "Long line request" object
 #===============================================================================  
 class LongLineReq(object):
     requestType  = '' # requestType can be "searchno" or "fileno"
     Lw = []
+    keyId = ''
      
 #===============================================================================
 # "Long line request" resource
 #===============================================================================       
 class LongLineReqResource(Resource):
     requestType = fields.CharField(attribute = 'requestType')
-    Lw = fields.ListField(attribute='Lw',default=[])      
+    Lw = fields.ListField(attribute='Lw',default=[])  
+    keyId = fields.CharField(attribute = 'keyId')   
+     
     class Meta:
         resource_name = 'longrequest'
         object_class = LongLineReq
@@ -304,111 +381,21 @@ class LongLineReqResource(Resource):
          
         requestType = bundle.obj.requestType
         Lw = bundle.obj.Lw
-        logger.debug("Type of request:",requestType)
-        logger.debug("Request content:",Lw)
+        logger.debug("Type of request:{}".format(requestType))
+        logger.debug("Request content:{}".format(Lw))
+        
+        keyid = bundle.obj.keyId
          
         if requestType=="fileno":
-            ret = FileNo.objects.filter(w__in=Lw).values("fileno","id","w")
+            ret = FileNo.objects.filter(w__in=Lw,keyId=keyid).values("fileno","id","w")
             logger.debug(ret)
         else:   
-            ret = SearchNo.objects.filter(w__in=Lw).values("searchno","id","w")
+            ret = SearchNo.objects.filter(w__in=Lw,keyId=keyid).values("searchno","id","w")
             logger.debug(ret)
             
-        #bundle.obj.requestType = '' # hide requestLine in the response
         bundle.obj.Lw = []#ret.values("w") # hide requestType in the response
         bundle.data["objects"]=list(ret)
         return bundle
-
-# #===============================================================================
-# # "Long line request" object
-# #===============================================================================  
-# class LongLineReq(object):
-#     requestType  = '' # requestType can be "searchno" or "fileno"
-#     requestLine = ''
-#     
-# #===============================================================================
-# # "Long line request" resource
-# #===============================================================================       
-# class LongLineReqResource(Resource):
-#     requestType = fields.CharField(attribute = 'requestType')
-#     requestLine = fields.CharField(attribute='requestLine')
-#     #Lno = fields.ListField(attribute='Lno',default=[]) # List of addresses, computed by TA
-#       
-#     class Meta:
-#         resource_name = 'longrequest'
-#         object_class = LongLineReq
-#         authorization = Authorization()
-#         always_return_data=True # This is enabled, permitting return results for post request
-#         #fields = ['Lno']
-#     
-#      # adapted this from ModelResource
-#     def get_resource_uri(self, bundle_or_obj):
-#         kwargs = {
-#             'resource_name': self._meta.resource_name,
-#         }
-# 
-#         if isinstance(bundle_or_obj, Bundle):
-#             kwargs['pk'] = bundle_or_obj.obj.requestType # pk is referenced in ModelResource
-#         else:
-#             kwargs['pk'] = bundle_or_obj.requestType
-#           
-#         if self._meta.api_name is not None:
-#             kwargs['api_name'] = self._meta.api_name
-#           
-#         return self._build_reverse_url('api_dispatch_detail', kwargs = kwargs)
-#  
-#     def get_object_list(self, request):
-#         # inner get of object list... this is where you'll need to
-#         # fetch the data from what ever data source
-#         return 0
-#  
-#     def obj_get_list(self, request = None, **kwargs):
-#         # outer get of object list... this calls get_object_list and
-#         # could be a point at which additional filtering may be applied
-#         return self.get_object_list(request)
-#  
-#     def obj_get(self, bundle, request = None, **kwargs):
-# #         get one object from data source
-#         requestType = kwargs['pk']
-#             
-#         bundle_obj = LongLineReq()
-#         bundle_obj.requestType = requestType
-# 
-#         try:
-#             return bundle_obj
-#         except KeyError:
-#             raise NotFound("Object not found") 
-#    
-#     def obj_create(self, bundle, request = None, **kwargs):
-#         logger.info("Long line request in TA Server")
-#         
-#         # create a new object
-#         bundle.obj = LongLineReq()
-#           
-#         # full_hydrate does the heavy lifting mapping the
-#         # POST-ed payload key/values to object attribute/values
-#         bundle = self.full_hydrate(bundle)
-#         
-#         requestType = bundle.obj.requestType
-#         requestLine = bundle.obj.requestLine
-#         logger.debug("Type of request:",requestType)
-#         logger.debug("Request content:",requestLine)
-#         
-#         if requestType=="fileno":
-#             #response = FileNo.objects.filter(Q(w="patient[age]20") | Q(w="patient[age]23"))
-#             logger.debug("Send internal request")
-#             response = requests.get("http://127.0.0.1:8080/api/v1/fileno/?w="+requestLine)  
-#             logger.debug("List of file no:",response)
-#         else:   
-#             #response = SearchNo.objects.get(w=requestLine)
-#             response = requests.get("http://127.0.0.1:8080/api/v1/search/?w="+requestLine)  
-#             logger.debug("List of search no:",response)
-#         bundle.obj.requestLine = '' # hide requestLine in the response
-#         bundle.obj.requestType = '' # hide requestType in the response
-#         #bundle.data["result"]=response.text
-#         bundle.data["result"]=response
-#         return bundle
-
 
 #===============================================================================
 # "Key" resource
@@ -418,7 +405,7 @@ class KeyResource(ModelResource):
         queryset = Key.objects.all()
         resource_name = 'key'
         authorization = Authorization()
-        fields = ['key']
+        fields = ['key','keyId']
         allowed_methods = ['get','post','delete'] # only allow GET, POST method
         filtering = {
             "key": ['exact'],
@@ -429,6 +416,7 @@ class KeyResource(ModelResource):
 #===============================================================================  
 class Upload(object):
     Lw = ''
+    keyId = ''
     
 #===============================================================================
 # "Search Query" resource
@@ -437,6 +425,7 @@ class UploadResource(Resource):
     Lw = fields.CharField(attribute = 'Lw')
     Lfileno = fields.ListField(attribute='Lfileno',default=[]) # List of fileno
     Lsearchno = fields.ListField(attribute='Lsearchno',default=[]) # List of searchno
+    keyId = fields.CharField(attribute = 'keyId')
     
     class Meta:
         resource_name = 'upload'
@@ -482,8 +471,6 @@ class UploadResource(Resource):
         except KeyError:
             raise NotFound("Object not found") 
 
-    
-    #@transaction.atomic()
     def obj_create(self, bundle, request = None, **kwargs):
         global update_lock
         # Processing POST requests
@@ -505,12 +492,11 @@ class UploadResource(Resource):
         listW = bundle.obj.Lw
         logger.debug("Type of listW: %s",type(listW))
         
+        keyid = bundle.obj.keyId
+        
         logger.debug("Query for returned fileno")
         
-       # with transaction.atomic():
-             #listFileNo = get_object_or_404(FileNo.objects.select_for_update().filter(w__in=listW)) #test
-        #listFileNo = FileNo.objects.select_for_update().filter(w__in=listW) #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
-        listFileNo = FileNo.objects.filter(w__in=listW) #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
+        listFileNo = FileNo.objects.filter(w__in=listW,keyId=keyid) #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
         bundle.obj.Lfileno = listFileNo.values("w","fileno")
                  
         #logger.debug("List of fileno: ()",listFileNo)
@@ -522,9 +508,9 @@ class UploadResource(Resource):
                         
         Ly = []
         for x in listW:
-            y = listFileNo.filter(w=x).first() 
+            y = listFileNo.filter(w=x,keyId=keyid).first() 
             if y==None: # if not found
-                y = FileNo(w=x,fileno=1)
+                y = FileNo(w=x,fileno=1,keyId=keyid)
                 Ly.append(y)
             else: # if found
                 y.fileno = y.fileno+1
@@ -539,8 +525,7 @@ class UploadResource(Resource):
             FileNo.objects.bulk_create(Ly)
             
         logger.debug("Query for searchno")
-        listSearchNo = SearchNo.objects.filter(w__in=listW).values('w','searchno') #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
-       # logger.debug("List of searchno: {}",listSearchNo)
+        listSearchNo = SearchNo.objects.filter(w__in=listW,keyId=keyid).values('w','searchno') #values_list('fileno',flat=True) #FileNo.objects.get(w=listW)
         
         bundle.obj.Lsearchno = listSearchNo.values('w','searchno')
         bundle.obj.Lw = ''
@@ -549,3 +534,124 @@ class UploadResource(Resource):
         logger.debug("Thread left critical region =>  {0} ".format(cur_thread.name))
         update_lock.release()
         return bundle # return the list of computed addresses to CSP, which sends the request
+
+#===============================================================================
+# "PubKey" resource
+#===============================================================================
+class PubKey(object):
+    pubkey = ''
+    report = ''
+    #enclaveId = ''
+    keyId = ''
+
+class PubKeyResource(Resource):
+    pubkey = fields.CharField(attribute = 'pubkey')
+    report = fields.CharField(attribute = 'report')
+    #enclaveId = fields.CharField(attribute = 'enclaveId')
+    keyId = fields.CharField(attribute = 'keyId')
+
+    class Meta:
+        resource_name = 'pubkey'
+        object_class = PubKey
+        authorization = Authorization()
+        allowed_methods = ['get','post'] # only allow GET, POST method
+        field = ['report','pubkey','keyId']
+        always_return_data= False
+    # adapted this from ModelResource
+    def get_resource_uri(self, bundle_or_obj):
+        kwargs = {
+            'resource_name': self._meta.resource_name,
+        }
+ 
+        if isinstance(bundle_or_obj, Bundle):
+            kwargs['pk'] = bundle_or_obj.obj.keyId # pk is referenced in ModelResource
+        else:
+            kwargs['pk'] = bundle_or_obj.keyId
+           
+        if self._meta.api_name is not None:
+            kwargs['api_name'] = self._meta.api_name
+           
+        return self._build_reverse_url('api_dispatch_detail', kwargs = kwargs)
+    
+    def get_object_list(self, request):
+        # inner get of object list... this is where you'll need to
+        # fetch the data from what ever data source
+        return 0
+
+    def obj_get_list(self, request=None, **kwargs):
+        # outer get of object list... this calls get_object_list and
+        # could be a point at which additional filtering may be applied
+        return self.get_object_list(request)
+    
+    def obj_get(self, bundle, request = None, **kwargs):
+        logger.debug("invoke request to teep-server")
+        keyId = kwargs['pk']
+
+        num_enc = EnclaveId.objects.all().count()
+        if (num_enc==0): #if enclave is not initialized
+            ENCLAVE=simple.initenclave(URL_TEEP)
+            pk, report,enclave_id,h = simple.getpubkey(ENCLAVE) #simple.getpubkey(URL_TEEP)
+            EnclaveId.objects.create(encId=enclave_id,pubkey=pk,report=report,sha=h)
+        else:
+            q = EnclaveId.objects.first()
+            pk = q.pubkey
+            report = q.report
+            enclave_id = q.encId
+            if (simple.existenclave(enclave_id,URL_TEEP)==0) : # if enclave does not exist
+                q.delete()
+                ENCLAVE=simple.initenclave(URL_TEEP)
+                pk, report,enclave_id,h = simple.getpubkey(ENCLAVE)
+                EnclaveId.objects.create(encId=enclave_id,pubkey=pk,report=report,sha=h)
+
+        bundle_obj = PubKey()
+        bundle_obj.pubkey = pk
+        bundle_obj.report = report
+        #bundle_obj.enclaveId = enclave_id
+        bundle_obj.keyId=enclave_id
+        try:
+            return bundle_obj
+        except KeyError:
+            raise NotFound("Object not found") 
+
+    def obj_create(self, bundle, request=None, **kwargs):
+        logger.info("Store encrypted key to TA")
+
+        # create a new object
+        bundle.obj = PubKey()
+
+        # full_hydrate does the heavy lifting mapping the
+        # POST-ed payload key/values to object attribute/values
+        bundle = self.full_hydrate(bundle)
+
+        q = EnclaveId.objects.first()
+        # invoke API of TA
+        enclaveId = q.encId#ENCLAVE['id']#bundle.obj.enclaveId
+        pubkey = b64decode(bytes(bundle.obj.pubkey,"utf-8")) # convert string into bytes, then decode 
+        logger.debug("api/resource.py - public key:%s",pubkey)
+        keyId = bundle.obj.keyId
+        sealed_pk=simple.sealkey(enclaveId,pubkey,URL_TEEP)
+        sealed_pk=b64encode(sealed_pk).decode() # encode sealed_pk into base64, then convert it into string
+        logger.debug("api/resource.py - sealed key:%s,type:%s",sealed_pk,type(sealed_pk))
+        Key.objects.create(key=sealed_pk, keyId=keyId)
+       
+        bundle.obj.pubkey = ''
+        bundle.obj.report = ''
+        #bundle.obj.enclaveId = '' # hide KeyW in the response
+        bundle.obj.keyId = ''
+        return bundle
+
+#===============================================================================
+# "EnclaveId" resource
+#===============================================================================
+class EnclaveIdResource(ModelResource):
+    class Meta:
+        queryset = Key.objects.all()
+        resource_name = 'enclaveid'
+        authorization = Authorization()
+        fields = ['encId']
+        allowed_methods = ['get','post','delete'] # only allow GET, POST method
+        filtering = {
+            "encId": ['exact'],
+        }
+
+

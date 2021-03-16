@@ -24,6 +24,8 @@ search_resource = SearchResource();
 key_resource = KeyResource();
 upload_resource = UploadResource();
 longlinereq_resource = LongLineReqResource();
+pubkey_resource = PubKeyResource();
+enclaveid_resource = EnclaveIdResource();
 
 v1_api = Api(api_name='v1')
 v1_api.register(fileno_resource)
@@ -32,6 +34,8 @@ v1_api.register(search_resource)
 v1_api.register(key_resource)
 v1_api.register(upload_resource)
 v1_api.register(longlinereq_resource)
+v1_api.register(pubkey_resource)
+v1_api.register(enclaveid_resource)
 
 urlpatterns = [
     url(r'^admin/', admin.site.urls),

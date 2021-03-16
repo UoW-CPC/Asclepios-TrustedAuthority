@@ -1,0 +1,136 @@
+// Copyright (c) Open Enclave SDK contributors.
+// Licensed under the MIT License.
+
+#include "aes_ccm.h"
+#include <string.h>
+#include "log.h"
+
+/**
+ * Constructor.
+ * Set initialization vector (iv) value, which will be used for encryption/decryption
+ */
+EncryptorCCM::EncryptorCCM()
+{
+    unsigned char iv[AES_IV_SIZE] ={0x61,0x7a,0x79,0x6d,0x62,0x6c,0x71,0x65};
+    memcpy(m_original_iv, iv, AES_IV_SIZE);
+}
+
+/**
+ * Initialize the encryptor with the input key, and the defined iv value
+ *
+ * @param key Symmetric key
+ * @return ret 0 if success, !=0 otherwise
+ */
+int EncryptorCCM::initialize( unsigned char*key )
+{
+    int ret = 0;
+    TRACE_ENCLAVE("ecall_dispatcher::initialize");
+
+    memset((void*)m_encryption_key, 0, ENCRYPTION_KEY_SIZE_IN_BYTES);
+    
+    TRACE_ENCLAVE("copy encryption key");
+ 
+    memcpy(m_encryption_key,key,ENCRYPTION_KEY_SIZE_IN_BYTES);
+
+    // initialize aes context
+    mbedtls_ccm_init( &m_aescontext );
+    ret = mbedtls_ccm_setkey( &m_aescontext, MBEDTLS_CIPHER_ID_AES, m_encryption_key , ENCRYPTION_KEY_SIZE );
+
+    if (ret != 0)
+    {
+        TRACE_ENCLAVE("mbedtls_aes_setkey_dec failed with %d", ret);
+        goto exit;
+    }
+    // init iv
+    memcpy(m_operating_iv, m_original_iv, AES_IV_SIZE);
+exit:
+    return ret;
+}
+
+/**
+ * Encrypt data.
+ *
+ * @param encrypt true if encrypting data, false if decrypting data
+ * @param input_buf Plaintext if encrypt=true, ciphertext if encrypt=false
+ * @param[out] output_buf Ciphertext if encrypt=true, plaintext if encrypt=false
+ * @param size Size of the input data
+ * @param[out] out_data_len Length of output
+ * @return ret 0 if success, != otherwise
+ */
+int EncryptorCCM::encrypt_block(
+    bool encrypt,
+    unsigned char* input_buf,
+    unsigned char** output_buf,
+    size_t size,
+    size_t *out_data_len)
+{
+    unsigned char output[ENCRYPTION_KEY_SIZE] = {0};
+    // allocated memory (1)
+    unsigned char* output_data = (unsigned char*)oe_host_malloc(ENCRYPTION_KEY_SIZE_IN_BYTES+TAG_LEN);
+    int ret = 0;
+
+    if(encrypt==MBEDTLS_AES_ENCRYPT){
+	/* for testing
+    	const char*msg="hello";
+    	size_t msg_len = 5;
+    	unsigned char key[] = { 0xD8,0xCC,0xAA,0x75 ,0x3E,0x29,0x83,0xF0 ,0x36,0x57,0xAB,0x3C ,0x8A,0x68,0xA8,0x5A};
+
+    	unsigned char ciphertext[ENCRYPTION_KEY_SIZE+TAG_LEN];
+	ret = mbedtls_ccm_encrypt_and_tag( &m_aescontext, size,
+                     m_operating_iv, AES_IV_SIZE,NULL, 0,
+                     (const unsigned char*)input_buf, ciphertext,
+                     ciphertext+size, TAG_LEN );
+        ret = mbedtls_ccm_auth_decrypt( &m_aescontext, size,
+                                m_operating_iv, AES_IV_SIZE,
+                                NULL, 0,
+                                (const unsigned char*)ciphertext, output_data,
+                                ciphertext + size, TAG_LEN );
+	*/
+    	ret = mbedtls_ccm_encrypt_and_tag(&m_aescontext, size, 
+			m_operating_iv, AES_IV_SIZE,
+                        NULL, 0, 
+			(const unsigned char*)input_buf, output_data, 
+			output_data + size,TAG_LEN);
+	
+	memcpy(m_operating_iv, m_original_iv, AES_IV_SIZE);
+	
+	if (ret != 0)
+        {
+                TRACE_ENCLAVE("mbedtls_ccm_encrypt_and_tag failed with %d", ret);
+        } else {
+                *output_buf = output_data;
+	        *out_data_len = size + TAG_LEN;
+	}
+    } else { //decryption
+	size_t msg_len = size - TAG_LEN; //the ciphertext string contains ciphertext content plus tag. Therefore, the length of ciphertext is equal to the size of the string subtracted TAG_LEN 
+	
+	ret = mbedtls_ccm_auth_decrypt( &m_aescontext, msg_len,
+                                m_operating_iv, AES_IV_SIZE, 
+				NULL, 0,
+                                (const unsigned char*)input_buf, output_data,
+                                input_buf + msg_len, TAG_LEN );
+        memcpy(m_operating_iv, m_original_iv, AES_IV_SIZE);
+	if (ret != 0)
+        {
+                TRACE_ENCLAVE("mbedtls_ccm_auth_decrypt failed with %d", ret);
+        } else {
+		*output_buf = output_data;
+		*out_data_len = msg_len;
+        }
+    }
+    return ret;
+}
+
+/**
+ * Close the encryptor, and free any allocated memory.
+ *
+ * @return void
+ */
+void EncryptorCCM::close()
+{
+    // free aes context
+    mbedtls_ccm_free(&m_aescontext);
+
+    //free memory allocated (1) at teep-server source code (lib.py)
+    TRACE_ENCLAVE("encryptor::close");
+}
